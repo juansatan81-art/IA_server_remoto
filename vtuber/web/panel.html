@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel VTuber</title>
+<style>
+  :root { --fondo: #f4f4f5; --tarjeta: #fff; --texto: #18181b; --suave: #71717a; --borde: #e4e4e7; --acento: #18181b; --error: #b91c1c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fondo: #111113; --tarjeta: #1c1c1f; --texto: #f4f4f5; --suave: #a1a1aa; --borde: #2e2e33; --acento: #f4f4f5; --error: #f87171; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.45 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr 340px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 14px; }
+  h1 { font-size: 18px; margin: 0 0 4px; } h2 { font-size: 14px; margin: 0 0 10px; color: var(--suave); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  #vista { width: 100%; aspect-ratio: 1254 / 1200; border: 0; border-radius: 10px; background: repeating-conic-gradient(#0000 0 25%, #8882 0 50%) 0 0 / 24px 24px; }
+  #registro { height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .linea { padding: 6px 10px; border-radius: 10px; background: var(--fondo); white-space: pre-wrap; }
+  .linea b { font-size: 12px; color: var(--suave); display: block; }
+  .linea.error { color: var(--error); }
+  form { display: flex; gap: 8px; margin-top: 8px; }
+  input[type=text] { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); font: inherit; }
+  button { padding: 9px 14px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); font: inherit; cursor: pointer; }
+  button.principal { background: var(--acento); color: var(--tarjeta); border-color: var(--acento); }
+  button:disabled { opacity: .5; cursor: wait; }
+  #emociones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .fila { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  #estado { color: var(--suave); font-size: 13px; }
+  code { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <div style="display:grid; gap:16px">
+    <section>
+      <h1>Panel del VTuber</h1>
+      <div id="estado">Conectando…</div>
+    </section>
+    <section>
+      <h2>Conversación con la IA</h2>
+      <div id="registro"></div>
+      <form id="formChat">
+        <input id="chat" type="text" placeholder="Escríbele algo a la IA…" autocomplete="off">
+        <button class="principal" id="enviarChat">Enviar</button>
+      </form>
+      <form id="formDecir">
+        <input id="decir" type="text" placeholder="Que diga exactamente esto (admite [feliz], [triste]…)" autocomplete="off">
+        <button id="enviarDecir">Decir</button>
+      </form>
+      <div class="fila">
+        <button id="parar">Callar</button>
+        <button id="olvidar">Borrar memoria</button>
+      </div>
+    </section>
+  </div>
+  <div style="display:grid; gap:16px; align-content:start">
+    <section>
+      <h2>Vista previa</h2>
+      <iframe id="vista" src="/avatar?subtitulos=1" title="Avatar"></iframe>
+      <p id="nota" style="font-size:13px;color:var(--suave);margin:8px 0 0">En OBS añade una <b>fuente de navegador</b> con <code>/avatar</code>. Si no oyes nada aquí, haz clic sobre la vista previa.</p>
+    </section>
+    <section>
+      <h2>Emociones</h2>
+      <div id="emociones"></div>
+      <h2 style="margin-top:14px">Cabeza</h2>
+      <div class="fila">
+        <button data-cabeza="-25,0,-0.8">Ladear ←</button>
+        <button data-cabeza="0,0,0">Centro</button>
+        <button data-cabeza="25,0,0.8">Ladear →</button>
+        <button data-cabeza="0,18,0">Agachar</button>
+      </div>
+    </section>
+  </div>
+</main>
+<script src="panel.js"></script>
+</body>
+</html>

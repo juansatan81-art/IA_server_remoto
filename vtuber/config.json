@@ -1,0 +1,23 @@
+{
+  "servidor": {
+    "host": "127.0.0.1",
+    "puerto": 8765
+  },
+  "personaje": {
+    "nombre": "Mia",
+    "personalidad": "Eres segura de ti misma, un poco presumida y bromista, pero en el fondo muy cariñosa con tu público. Te encantan los videojuegos y la tecnología."
+  },
+  "cerebro": {
+    "url": "http://localhost:11434/v1",
+    "modelo": "qwen2.5:7b",
+    "api_key": "local",
+    "temperatura": 0.8,
+    "max_tokens": 300,
+    "historial": 20
+  },
+  "voz": {
+    "voz": "es-ES-ElviraNeural",
+    "velocidad": "+0%",
+    "tono": "+0Hz"
+  }
+}
