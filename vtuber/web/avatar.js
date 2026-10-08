@@ -590,7 +590,8 @@ function dibujar(p) {
 // ---------------------------------------------------------------- audio y voz
 const audio = new Audio();
 audio.crossOrigin = 'anonymous';
-let contexto = null, analizador = null, muestras = null;
+let contexto = null, analizador = null, muestras = null, volumen = null;
+let silenciado = parametros.has('mudo');
 const cola = [];
 let enCurso = null;
 
@@ -602,8 +603,12 @@ function prepararAudio() {
     analizador = contexto.createAnalyser();
     analizador.fftSize = 1024;
     muestras = new Float32Array(analizador.fftSize);
+    // volumen aparte: ?mudo=1 analiza la voz (para mover la boca) pero no la reproduce
+    volumen = contexto.createGain();
+    volumen.gain.value = silenciado ? 0 : 1;
     fuente.connect(analizador);
-    analizador.connect(contexto.destination);
+    analizador.connect(volumen);
+    volumen.connect(contexto.destination);
   } catch (err) {
     console.warn('Sin análisis de audio; la boca se moverá de forma aproximada.', err);
   }
@@ -749,9 +754,15 @@ async function iniciar() {
 }
 
 // Para controlar el avatar desde la consola del navegador o desde pruebas
+// Silenciar o no este avatar (la boca se sigue moviendo igual)
+function silenciar(si) {
+  silenciado = !!si;
+  if (volumen) volumen.gain.value = silenciado ? 0 : 1;
+}
+
 window.avatar = {
-  emocion: ponerEmocion, hablar, parar, cabeza: ponerCabeza, EXPRESIONES,
-  estado: () => ({ emocion, actual }),
+  emocion: ponerEmocion, hablar, parar, cabeza: ponerCabeza, silenciar, EXPRESIONES,
+  estado: () => ({ emocion, actual, silenciado: volumen ? volumen.gain.value === 0 : silenciado }),
   pecho: () => ({ ...(anim.rebote || { x: 0, y: 0 }) }),   // rebote actual del pecho, en px
 };
 

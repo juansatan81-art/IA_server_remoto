@@ -12,6 +12,7 @@ Necesita: pip install -r herramientas/requisitos.txt
 """
 import argparse
 import json
+import os
 from pathlib import Path
 
 import cv2
@@ -223,8 +224,6 @@ CORTE_PELO_LARGO = 60
 # Cuánto pelo largo se quita alrededor del pelo de la cabeza (px de diámetro).
 # Más pequeño = asoma más pelo largo junto a la cabeza.
 MARGEN_PELO_LARGO = 81
-# Tamaño de los huecos entre las puntas del pelo de la cabeza que se rellenan de blanco.
-RELLENO_PUNTAS = 61
 
 
 def montar(t):
@@ -265,21 +264,38 @@ def montar(t):
     filas = np.flatnonzero((ha > 0.5).any(1))
     tapado[filas.max() - 60:] = False
     tapado[:filas.max() - CORTE_PELO_LARGO] = True     # más arriba manda el pelo de la cabeza
-    # en las curvas de las puntas del pelo de la cabeza quedaría un hueco
-    # transparente: ahí se deja pelo largo, en blanco y sin sus líneas
-    cabeza = (ha > 0.5).astype(np.uint8)
-    cerrada = cv2.morphologyEx(cabeza, cv2.MORPH_CLOSE,
-                               cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (RELLENO_PUNTAS, RELLENO_PUNTAS)))
-    huecos = (cerrada > 0) & (cabeza == 0)
-    huecos = cv2.dilate(huecos.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
-    la = np.where(tapado & ~huecos, 0, la)
-    la = np.where(huecos, np.maximum(la, 1.0), la)
-    lg = np.where(huecos, 1.0, lg)
-    guardar("pelo_largo", lg, la)
+    la_entero = la.copy()                   # silueta completa del pelo largo
+    la = np.where(tapado, 0, la)
     cg, ca = alargar_cuello(*al_lienzo(cg, ca))
+    pg, pa = al_lienzo(pg, pa)
+
+    # Huecos: zonas transparentes ENCERRADAS por el personaje (p. ej. en la curva
+    # de las puntas del pelo de la cabeza). Se rellenan con pelo largo blanco y
+    # sin líneas. Lo transparente que toca el exterior no se toca, así no salen
+    # manchas blancas fuera del contorno.
+    _, fa_c = colocar_pieza(*pieza("cara_editada"), al.componer(T["cara_editada"], busto_a_lienzo), (LW, LH))
+    lleno = ((np.maximum.reduce([la, ca, pa, ha, fa_c]) > 0.35)).astype(np.uint8)
+    fuera = np.ones((LH + 2, LW + 2), np.uint8)       # marco vacío alrededor del lienzo
+    fuera[1:-1, 1:-1] = 1 - lleno
+    cv2.floodFill(fuera, None, (0, 0), 2)              # todo lo vacío conectado con el borde
+    huecos = (fuera[1:-1, 1:-1] == 1)
+    huecos[:filas.max() - 400] = False                  # solo alrededor de las puntas
+    huecos[filas.max() + 120:] = False
+    # algo de margen, porque la cabeza y el pelo largo no se mueven igual; pero
+    # sin salirse nunca de la silueta del pelo largo
+    huecos = cv2.dilate(huecos.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))) > 0
+    huecos &= ~(ha > 0.5) & (la_entero > 0.5)
+    la = np.where(huecos, 1.0, la)
+    lg = np.where(huecos & (la > 0), np.where(huecos, 1.0, lg), lg)
+    print(f"  huecos rellenados: {int(huecos.sum())} px")
+    if os.environ.get("VTUBER_DEPURAR"):     # ver qué se rellena: rojo = hueco
+        v = np.dstack([lleno * 120] * 3).astype(np.uint8)
+        v[huecos] = (0, 0, 255)
+        cv2.imwrite(os.environ["VTUBER_DEPURAR"], v)
+
+    guardar("pelo_largo", lg, la)
     guardar("cuerpo", cg, ca)
     arriba_cuerpo = int(np.flatnonzero((ca > 0.5).any(1)).min())
-    pg, pa = al_lienzo(pg, pa)
     guardar("pecho", pg, pa)
     filas_pecho = np.flatnonzero((pa > 0.5).any(1))
 

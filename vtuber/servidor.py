@@ -221,7 +221,16 @@ def main():
           f"\n  Panel:         http://{host}:{puerto}/panel"
           f"\n  Cerebro:       {vt.cerebro.modelo} en {vt.cerebro.url}"
           f"\n  Voz:           {vt.voz.voz}\n")
-    web.run_app(crear_app(vt), host=host, port=puerto, print=None)
+    try:
+        web.run_app(crear_app(vt), host=host, port=puerto, print=None)
+    except OSError as err:
+        if err.errno in (98, 10048) or "10048" in str(err):
+            print(f"\n  ERROR: el puerto {puerto} ya está en uso: hay OTRO servidor del VTuber abierto"
+                  f"\n  (una ventana negra anterior, o uno que arrancó otro programa)."
+                  f"\n  Ciérralo y vuelve a intentarlo. En PowerShell puedes cerrarlo con:"
+                  f"\n    Stop-Process -Id (Get-NetTCPConnection -LocalPort {puerto}).OwningProcess -Force\n")
+            raise SystemExit(1)
+        raise
 
 
 if __name__ == "__main__":

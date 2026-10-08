@@ -88,5 +88,16 @@ function conectar() {
   ws.onclose = () => { $('estado').textContent = 'Reconectando…'; setTimeout(conectar, 1500); };
 }
 
+// sonido de la vista previa (se recuerda en este navegador)
+const casilla = $('sonidoVista');
+try { casilla.checked = localStorage.getItem('sonidoVista') !== 'no'; } catch { /* sin almacenamiento */ }
+function aplicarSonido() {
+  try { localStorage.setItem('sonidoVista', casilla.checked ? 'si' : 'no'); } catch { /* da igual */ }
+  const v = $('vista').contentWindow;
+  if (v && v.avatar) v.avatar.silenciar(!casilla.checked);
+}
+casilla.addEventListener('change', aplicarSonido);
+$('vista').addEventListener('load', () => setTimeout(aplicarSonido, 500));
+
 conectar();
 setInterval(cargarEstado, 5000);
