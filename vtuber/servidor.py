@@ -222,7 +222,7 @@ def main():
           f"\n  Cerebro:       {vt.cerebro.modelo} en {vt.cerebro.url}"
           f"\n  Voz:           {vt.voz.voz}\n")
     try:
-        web.run_app(crear_app(vt), host=host, port=puerto, print=None)
+        web.run_app(crear_app(vt), host=host, port=puerto, print=None, access_log=None)
     except OSError as err:
         if err.errno in (98, 10048) or "10048" in str(err):
             print(f"\n  ERROR: el puerto {puerto} ya está en uso: hay OTRO servidor del VTuber abierto"

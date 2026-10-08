@@ -18,9 +18,16 @@ Ejemplo: [feliz] ¡Hola a todos! [pensativa] Mmm, ¿de qué hablamos hoy?
 
 Reglas:
 - Empieza SIEMPRE con una etiqueta de emoción y cámbiala cuando cambie tu emoción.
+- Usa SOLO esas etiquetas, escritas exactamente así; no inventes otras.
 - Respuestas cortas y habladas: 1 a 3 frases, nada de listas, código ni markdown.
 - No describas acciones entre asteriscos; tu voz se genera a partir de tu texto.
-- Habla siempre en español."""
+- Habla SIEMPRE y SOLO en español: nunca escribas en chino, inglés ni con otros alfabetos."""
+
+# Caracteres de chino, japonés y coreano: los modelos Qwen pequeños a veces
+# cambian de idioma a mitad de frase
+_OTRO_ALFABETO = re.compile("[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]")
+_RECORDATORIO = ("Tu respuesta anterior mezclaba otro idioma. Repite la respuesta entera "
+                 "solo en español, con la misma etiqueta de emoción al principio.")
 
 
 class Cerebro:
@@ -43,6 +50,24 @@ class Cerebro:
         mensajes = [{"role": "system", "content": self.sistema},
                     *self.historial,
                     {"role": "user", "content": contenido}]
+        respuesta = await self._pedir(mensajes)
+        # si se ha colado otro idioma, se le pide una vez que lo repita en español
+        if _OTRO_ALFABETO.search(respuesta):
+            respuesta = await self._pedir(mensajes + [{"role": "assistant", "content": respuesta},
+                                                      {"role": "user", "content": _RECORDATORIO}])
+        # y si aún así queda algo, se corta ahí: mejor una frase más corta que oírla en chino
+        corte = _OTRO_ALFABETO.search(respuesta)
+        if corte:
+            respuesta = respuesta[:corte.start()].rstrip(" ,;:-") or "[avergonzada] Perdón, me he liado."
+            if respuesta[-1] not in ".!?…":
+                respuesta += "…"
+
+        self.historial += [{"role": "user", "content": contenido},
+                           {"role": "assistant", "content": respuesta}]
+        self.historial = self.historial[-self.max_historial:]
+        return respuesta
+
+    async def _pedir(self, mensajes):
         cuerpo = {
             "model": self.modelo,
             "messages": mensajes,
@@ -59,12 +84,7 @@ class Cerebro:
                 datos = await r.json()
         respuesta = datos["choices"][0]["message"]["content"] or ""
         # los modelos "razonadores" (qwen3, deepseek-r1...) piensan dentro de <think>
-        respuesta = re.sub(r"<think>.*?</think>", "", respuesta, flags=re.S | re.I).strip()
-
-        self.historial += [{"role": "user", "content": contenido},
-                           {"role": "assistant", "content": respuesta}]
-        self.historial = self.historial[-self.max_historial:]
-        return respuesta
+        return re.sub(r"<think>.*?</think>", "", respuesta, flags=re.S | re.I).strip()
 
     def olvidar(self):
         self.historial.clear()
