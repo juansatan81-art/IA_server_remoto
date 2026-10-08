@@ -22,6 +22,8 @@ let CORTE = 607;          // por encima, el pelo largo se mueve rígido con la c
 let CUERPO_ARRIBA = 595;
 const EJE = 631.5;        // eje de simetría de la cara (busto)
 const FRANJA = 2;
+// Pecho "gelatina" (por defecto) o "firme" (el de antes): ?pecho=firme
+const PECHO_GELATINA = new URLSearchParams(location.search).get('pecho') !== 'firme';
 
 const lienzo = document.getElementById('lienzo');
 const ctx = lienzo.getContext('2d');
@@ -205,7 +207,9 @@ function moverCuerpo(p, dt) {
   // movimientos bruscos y luego oscila un poco hasta asentarse
   const q = anim.pecho;
   const objY = c.y * 0.5 - p.respira * 1.5 + (p.y - c.y) * 0.4, objX = c.x * 0.5;
-  q.vy += ((objY - q.y) * 70 - q.vy * 4.5) * dt;
+  // gelatina: muelle algo más blando y con menos freno, así tiembla un poco más
+  const [rigidez, freno] = PECHO_GELATINA ? [55, 2.4] : [70, 4.5];
+  q.vy += ((objY - q.y) * rigidez - q.vy * freno) * dt;
   q.y += q.vy * dt;
   q.vx += ((objX - q.x) * 60 - q.vx * 6) * dt;
   q.x += q.vx * dt;
@@ -244,18 +248,36 @@ function dibujarPeloLargo(p) {
 
 // El torso se dibuja por franjas: arriba (hombros) sigue mucho a la cabeza y
 // abajo casi nada, así se dobla como una columna en vez de moverse en bloque.
-function franjasCuerpo(img, p, extraX = 0, extraY = 0, desde = 0, hasta = 1) {
+// extra(m): desplazamiento adicional de la franja de la fila m -> { dx, dy, sx }
+function franjasCuerpo(img, p, extra = null) {
   const c = anim.cuerpo;
   const crecer = p.respira * 0.006;           // respiración: se estira desde abajo
   for (let y = CUERPO_ARRIBA; y < H; y += FRANJA) {
     const m = y + FRANJA / 2;
     const abajo = suave(CUERPO_ARRIBA, H, m);
     const peso = lerp(0.7, 0.06, abajo);
-    const k = suave(desde, hasta, m);          // cuánto le afecta el desplazamiento extra
-    const dx = c.x * peso + c.incl * (H - m) * 0.35 + extraX * k;
-    const dy = c.y * peso * 0.8 - (H - m) * crecer + extraY * k;
-    ctx.drawImage(img, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
+    let dx = c.x * peso + c.incl * (H - m) * 0.35;
+    let dy = c.y * peso * 0.8 - (H - m) * crecer;
+    let sx = 1;
+    if (extra) {
+      const e = extra(m);
+      if (e === null) continue;                // fila sin pecho: nada que dibujar
+      dx += e.dx; dy += e.dy; sx = e.sx;
+    }
+    // sx estrecha o ensancha la franja alrededor del centro del lienzo
+    ctx.drawImage(img, 0, y, W, FRANJA, dx + W / 2 * (1 - sx), y + dy, W * sx, FRANJA + 1);
   }
+}
+
+// Historial corto del rebote: las filas de abajo usan valores de hace un
+// instante, así la onda baja por el pecho como en una gelatina.
+const historialRebote = [];
+function reboteHace(segundos) {
+  const objetivo = t - segundos;
+  for (let i = historialRebote.length - 1; i >= 0; i--) {
+    if (historialRebote[i].t <= objetivo) return historialRebote[i];
+  }
+  return historialRebote[0] || { x: 0, y: 0 };
 }
 
 function dibujarCuerpo(p) {
@@ -265,8 +287,23 @@ function dibujarCuerpo(p) {
   const rebY = limitar((q.y - (q.objY ?? q.y)) * 2.4, -12, 12);
   const rebX = limitar((q.x - c.x * 0.5) * 1.5, -6, 6);
   anim.rebote = { x: rebX, y: rebY };
-  // arriba, donde se une al torso, no se mueve; el rebote crece hacia abajo
-  franjasCuerpo(capas.pecho, p, rebX, rebY, PECHO.arriba, (PECHO.arriba + PECHO.abajo) / 2);
+  historialRebote.push({ t, x: rebX, y: rebY });
+  while (historialRebote.length > 2 && historialRebote[0].t < t - 0.4) historialRebote.shift();
+
+  const arriba = PECHO.arriba, abajo = PECHO.abajo;
+  franjasCuerpo(capas.pecho, p, (m) => {
+    if (m < arriba - 4 || m > abajo + 4) return null;
+    if (!PECHO_GELATINA) {
+      // firme: arriba, donde se une al torso, no se mueve; el rebote crece hasta la mitad
+      const k = suave(arriba, (arriba + abajo) / 2, m);
+      return { dx: rebX * k, dy: rebY * k, sx: 1 };
+    }
+    // gelatina: cuanto más abajo, más se mueve y con más retraso; al estirarse
+    // se estrecha un poco y al encogerse se ensancha
+    const k = suave(arriba, abajo, m);
+    const r = reboteHace(k * 0.09);
+    return { dx: r.x * k, dy: r.y * k * 1.15, sx: 1 - r.y * k * 0.004 };
+  });
 }
 
 function trazo(ancho, color = '#000', g = ctx) {
