@@ -10,6 +10,22 @@ import cv2
 import numpy as np
 
 
+def cargar(ruta):
+    """Como desmezclar(), pero acepta también PNG con transparencia propia.
+
+    Si quedan restos de magenta en los bordes se tratan igual: g = k·gris y
+    R = B = k·gris + (1 - k), así que k = 1 - (R - G) y gris = G / k.
+    """
+    img = cv2.imread(str(ruta), cv2.IMREAD_UNCHANGED)
+    if img.ndim == 2 or img.shape[2] == 3:
+        return desmezclar(ruta)
+    bgra = img.astype(np.float32) / 255
+    b, g, r, a = bgra[..., 0], bgra[..., 1], bgra[..., 2], bgra[..., 3]
+    k = np.clip(1 - (np.minimum(r, b) - g), 0, 1)
+    gris = np.where(k > 0.02, g / np.maximum(k, 0.02), 1)
+    return np.clip(gris, 0, 1), a * k
+
+
 def desmezclar(ruta):
     """Imagen sobre magenta -> (gris, alfa) en float 0..1.
 

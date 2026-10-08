@@ -40,5 +40,23 @@
     "escala": 0.41,
     "dx": 260.8,
     "dy": 137.4
+  },
+  "pelo_cabeza_editado": {
+    "error": 0.166,
+    "escala": 1.1151499999999999,
+    "dx": 128.65,
+    "dy": -38.7
+  },
+  "flequillo_editado": {
+    "error": 0.029,
+    "escala": 0.841,
+    "dx": -0.20000000000000018,
+    "dy": -204.35
+  },
+  "cara_editada": {
+    "error": 1.192,
+    "escala": 0.997,
+    "dx": 185.3,
+    "dy": 22.8
   }
 }

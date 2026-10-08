@@ -40,6 +40,10 @@ F = {
     "boca_a": "Boca abierta (A).jpg",
     "boca_o": "Boca media (O).jpg",
     "rubor": "2.4 · Rubor.jpg",
+    # versiones retocadas a mano (ya en su sitio: se alinean contra las anteriores)
+    "cara_editada": "3.1 · Cara (editada).png",
+    "pelo_cabeza_editado": "3.2 · Pelo de atrás (editado).png",
+    "flequillo_editado": "3.3 · Flequillo (editado).png",
 }
 
 # Zonas útiles de cada pieza (x0, y0, x1, y1), en sus propias coordenadas
@@ -57,12 +61,17 @@ CAJAS = {
     "boca_a": [(740, 1000, 1050, 1400)],
     "boca_o": [(800, 1100, 990, 1340)],
     "rubor": [(420, 1140, 1360, 1320)],
+    # en las retocadas se descarta lo casi transparente (bordes de capa del programa de dibujo)
+    "cara_editada": [(0, 0, 10000, 10000)],
+    "pelo_cabeza_editado": [(0, 0, 10000, 10000)],
+    "flequillo_editado": [(0, 0, 10000, 10000)],
 }
 
 
 def pieza(nombre, espejo=False):
-    gris, alfa = al.desmezclar(PIEZAS / F[nombre])
-    alfa = al.componentes_nitidas(alfa, CAJAS[nombre])
+    gris, alfa = al.cargar(PIEZAS / F[nombre])
+    if nombre in CAJAS:
+        alfa = al.componentes_nitidas(alfa, CAJAS[nombre])
     if espejo:
         gris, alfa = gris[:, ::-1].copy(), alfa[:, ::-1].copy()
     return gris, alfa
@@ -79,6 +88,9 @@ SEMILLAS = {
     "pelo_cabeza": (0.558, 127.1, -39.2),
     "flequillo": (0.70, 0.1, -204.4),
     "ojos": (0.41, 260.8, 137.9),
+    "cara_editada": (0.997, 185.3, 22.8),
+    "pelo_cabeza_editado": (1.115, 128.9, -38.7),
+    "flequillo_editado": (0.833, 6.3, -198.6),
 }
 
 
@@ -106,8 +118,17 @@ def calcular_alineacion():
                                 ("flequillo", ref_busto, False), ("ojos", ref_ojos, False)):
         gg, aa = pieza(nombre, espejo)
         t[nombre] = al.ajustar_desde(ref, al.lineas(gg, aa), variantes(*SEMILLAS[nombre]))
+    # las piezas retocadas a mano se alinean contra la versión anterior ya colocada
+    for nueva, vieja in (("pelo_cabeza_editado", "pelo_cabeza"), ("flequillo_editado", "flequillo")):
+        vg, va = colocar_pieza(*pieza(vieja), t[vieja][1:], (W, H))
+        gg, aa = pieza(nueva)
+        t[nueva] = al.ajustar_desde(al.lineas(vg, va), al.lineas(gg, aa), variantes(*SEMILLAS[nueva]))
+    ref_cara = np.zeros_like(ref_busto)
+    ref_cara[520:760, 330:935] = ref_busto[520:760, 330:935]     # contorno de la cara bajo los ojos
+    gg, aa = pieza("cara_editada")
+    t["cara_editada"] = al.ajustar_desde(ref_cara, al.lineas(gg, aa), variantes(*SEMILLAS["cara_editada"]))
     for k, v in t.items():
-        print(f"  {k:12} error {v[0]:.2f}px  escala {v[1]:.3f}  dx {v[2]:.1f}  dy {v[3]:.1f}")
+        print(f"  {k:20} error {v[0]:.2f}px  escala {v[1]:.3f}  dx {v[2]:.1f}  dy {v[3]:.1f}")
     datos = {k: {"error": round(v[0], 3), "escala": v[1], "dx": v[2], "dy": v[3]} for k, v in t.items()}
     ALINEACION.write_text(json.dumps(datos, indent=2, ensure_ascii=False))
     return datos
@@ -173,28 +194,6 @@ def separar_brazos(g, a, torso_a, pelo_g, pelo_a):
     return brazos & (a > 0.3)
 
 
-def cara_del_busto():
-    """La cara del busto original sin ojos, boca ni líneas que ahora aportan otras piezas."""
-    gris = cv2.imread(str(RAIZ / "arte" / "busto.png"), cv2.IMREAD_GRAYSCALE)[:H].astype(np.float32) / 255
-    mascara = np.zeros_like(gris, bool)
-    for y in range(444, 752):
-        oscuros = np.flatnonzero(gris[y, 330:935] < 0.5)
-        if oscuros.size == 0:
-            continue
-        izq, der = 330 + oscuros[0], 330 + oscuros[-1]
-        mascara[y, izq:der + 1] = True
-        if y < 604:   # entre los contornos: ojos y la línea bajo el flequillo
-            gris[y, izq + 8:der - 7] = 1
-    gris[622:672, 582:684] = 1          # boca
-    for x0, x1 in ((570, 582), (682, 694)):     # arranque del cuello bajo la barbilla
-        gris[751:, x0:x1] = 1
-    # borde suave: la barbilla entera y sin un corte seco por debajo
-    mascara = cv2.dilate(mascara.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
-    mascara = cv2.GaussianBlur(mascara.astype(np.float32), (0, 0), 1.5)
-    mascara = np.clip(mascara * 1.6, 0, 1)
-    return gris, mascara
-
-
 def montar(t):
     DESTINO.mkdir(parents=True, exist_ok=True)
     T = {k: (v["escala"], v["dx"], v["dy"]) for k, v in t.items()}
@@ -221,7 +220,8 @@ def montar(t):
 
     lg, la = al_lienzo(lg, la)
     # lo que queda bajo el pelo de la cabeza no se ve: fuera, para que no asome su contorno
-    hg, ha = colocar_pieza(*pieza("pelo_cabeza"), al.componer(T["pelo_cabeza"], busto_a_lienzo), (LW, LH))
+    hg, ha = colocar_pieza(*pieza("pelo_cabeza_editado"),
+                           al.componer(T["pelo_cabeza_editado"], busto_a_lienzo), (LW, LH))
     # el pelo largo de la maestra es algo más ancho que el de la cabeza: alrededor
     # de la cabeza se quita para que no salga un contorno doble
     tapado = cv2.dilate((ha > 0.5).astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (81, 81))) > 0
@@ -237,16 +237,11 @@ def montar(t):
 
     # --- cabeza, en coordenadas del busto
     tam_b = (W, H)
-    guardar("pelo_cabeza", *colocar_pieza(*pieza("pelo_cabeza"), T["pelo_cabeza"], tam_b))
-    fg, fa = pieza("flequillo")
-    # el borde de arriba del flequillo sobra: ahí se funde con el resto del pelo
-    dentro = (fa > 0.5).astype(np.uint8)
-    arriba = np.zeros_like(dentro)
-    arriba[14:] = dentro[:-14]                 # ¿hay flequillo 14 px más arriba?
-    borde_sup = (dentro > 0) & (arriba == 0)
-    fg = np.where(borde_sup | (fg > 0.6) | (fa < 0.6), 1, fg)
-    guardar("flequillo", *colocar_pieza(fg, fa, T["flequillo"], tam_b))
-    guardar("cara", *cara_del_busto())
+    for capa, nombre in (("pelo_cabeza", "pelo_cabeza_editado"), ("flequillo", "flequillo_editado"),
+                         ("cara", "cara_editada")):
+        gg, aa = pieza(nombre)
+        gg = np.where(gg > 0.8, 1, gg)     # rayitas grises casi blancas del relleno: fuera
+        guardar(capa, *colocar_pieza(gg, aa, T[nombre], tam_b))
     guardar("ojos_blanco", *colocar_pieza(*pieza("ojos"), T["ojos"], tam_b))
 
     pegatinas = {}
