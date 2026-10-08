@@ -22,15 +22,15 @@ let CORTE = 607;          // por encima, el pelo largo se mueve rígido con la c
 let CUERPO_ARRIBA = 595;
 const EJE = 631.5;        // eje de simetría de la cara (busto)
 const FRANJA = 2;
-// Cómo se comporta el pecho. Por defecto "gelatina"; para comparar:
-//   ?pecho=suave (gelatina más contenida)   ?pecho=firme (sin deformarse)
+// Cómo se comporta el pecho. Por defecto "suave"; para comparar:
+//   ?pecho=gelatina (más exagerado)   ?pecho=firme (sin deformarse)
 const ESTILOS_PECHO = {
   //          rigidez freno ganancia máx  tirón retraso(s) aplastar
   gelatina: { rigidez: 38, freno: 1.3, ganancia: 3.6, max: 18, tiron: 0.7, retraso: 0.15, aplastar: 0.0018 },
   suave: { rigidez: 55, freno: 2.4, ganancia: 2.4, max: 12, tiron: 0.4, retraso: 0.09, aplastar: 0.0015 },
   firme: { rigidez: 70, freno: 4.5, ganancia: 2.4, max: 12, tiron: 0.4, retraso: 0, aplastar: 0 },
 };
-const ESTILO_PECHO = ESTILOS_PECHO[new URLSearchParams(location.search).get('pecho')] || ESTILOS_PECHO.gelatina;
+const ESTILO_PECHO = ESTILOS_PECHO[new URLSearchParams(location.search).get('pecho')] || ESTILOS_PECHO.suave;
 
 const lienzo = document.getElementById('lienzo');
 const ctx = lienzo.getContext('2d');
@@ -104,6 +104,7 @@ function ponerEmocion(nombre, duracion = 0) {
   if (nombre !== emocion) anim.impulso = { tipo: nombre, inicio: t };
   emocion = nombre;
   volverANeutral = duracion > 0 ? t + duracion : 0;
+  avisarEstado();
   return true;
 }
 
@@ -632,16 +633,23 @@ function siguiente() {
   enCurso = m || null;
   if (!m) {
     mostrarSubtitulo('');
+    avisarEstado();
     if (emocion !== 'neutral' && !volverANeutral) volverANeutral = t + 3;
     return;
   }
   if (m.emocion) ponerEmocion(m.emocion);
   mostrarSubtitulo(m.texto || '');
+  avisarEstado();
   if (!m.audio) { setTimeout(terminar, 1500); return; }
   prepararAudio();
   if (contexto && contexto.state === 'suspended') contexto.resume().catch(() => {});
   audio.src = m.audio;
   audio.play().catch(() => pedirClic());
+}
+
+// cuenta al servidor (y de ahí al panel) qué emoción tiene y qué está diciendo
+function avisarEstado() {
+  if (typeof enviar === 'function') enviar({ tipo: 'estado', emocion, texto: enCurso ? enCurso.texto || '' : '' });
 }
 
 function terminar() {

@@ -28,6 +28,9 @@
   #emociones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .fila { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   #estado { color: var(--suave); font-size: 13px; }
+  #ahora { margin-top: 8px; font-size: 15px; }
+  #emocionActual { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--acento); color: var(--tarjeta); }
+  #diciendo { color: var(--suave); }
   code { font-size: 13px; }
 </style>
 </head>
@@ -37,6 +40,7 @@
     <section>
       <h1>Panel del VTuber</h1>
       <div id="estado">Conectando…</div>
+      <div id="ahora">Emoción: <b id="emocionActual">neutral</b> <span id="diciendo"></span></div>
     </section>
     <section>
       <h2>Conversación con la IA</h2>

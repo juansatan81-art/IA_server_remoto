@@ -120,6 +120,14 @@ def crear_app(vt: VTuber):
             async for msg in ws:
                 if msg.type == WSMsgType.ERROR:
                     break
+                # el avatar avisa de lo que hace de verdad; el panel lo muestra en directo
+                if msg.type == WSMsgType.TEXT and grupo is vt.avatares:
+                    try:
+                        datos = json.loads(msg.data)
+                    except json.JSONDecodeError:
+                        continue
+                    if datos.get("tipo") == "estado":
+                        await vt._enviar(vt.paneles, {**datos, "tipo": "estado_avatar"})
         finally:
             grupo.discard(ws)
         return ws

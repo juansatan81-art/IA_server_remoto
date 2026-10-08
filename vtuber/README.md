@@ -74,13 +74,21 @@ Otras buenas opciones: `es-ES-XimenaNeural`, `es-MX-DaliaNeural`,
 
 ## Uso
 
+**Windows:** doble clic en `iniciar.bat`. La primera vez prepara el entorno e
+instala lo necesario; después arranca el servidor y abre el panel.
+**Linux/Mac:** `./iniciar.sh`.
+
+O a mano, con el entorno virtual activado:
+
 ```bash
 python servidor.py
 ```
 
 - **Panel:** http://127.0.0.1:8765/panel. Desde aquí chateas con la IA, haces
   que diga frases exactas, cambias emociones y ladeas la cabeza. Tiene vista
-  previa.
+  previa, y arriba muestra en directo la emoción del avatar y la frase que dice.
+  En el registro de la conversación se ve la respuesta de la IA con sus
+  etiquetas (`[feliz]`, `[triste]`…), así sabes qué emoción eligió y por qué.
 - **Avatar para OBS:** añade una *Fuente de navegador* con la URL
   `http://127.0.0.1:8765/avatar`, tamaño 1300 × 1140, y marca *Controlar audio
   mediante OBS*. El fondo es transparente.
@@ -92,6 +100,7 @@ Opciones en la URL del avatar:
 | `?subtitulos=1` | muestra lo que dice |
 | `?fondo=%2300ff00` | fondo de color (por ejemplo verde para croma) |
 | `?emocion=feliz` | empieza con esa emoción |
+| `?pecho=gelatina` / `?pecho=firme` | rebote del pecho más exagerado / sin deformarse |
 
 ## Controlarlo desde otros programas
 

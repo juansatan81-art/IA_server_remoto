@@ -79,6 +79,10 @@ function conectar() {
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.tipo === 'registro') anotar(m.quien, m.texto);
+    if (m.tipo === 'estado_avatar') {
+      $('emocionActual').textContent = m.emocion;
+      $('diciendo').textContent = m.texto ? `— «${m.texto}»` : '';
+    }
   };
   ws.onopen = cargarEstado;
   ws.onclose = () => { $('estado').textContent = 'Reconectando…'; setTimeout(conectar, 1500); };
