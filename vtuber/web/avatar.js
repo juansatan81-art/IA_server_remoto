@@ -201,12 +201,15 @@ function moverCuerpo(p, dt) {
   c.y += c.vy * dt;
   c.incl = lerp(c.incl, p.incl, 1 - Math.exp(-dt * 3));
 
+  // el pecho persigue al torso con un muelle blando: se queda atrás en los
+  // movimientos bruscos y luego oscila un poco hasta asentarse
   const q = anim.pecho;
-  const objY = c.y * 0.5 - p.respira * 1.5, objX = c.x * 0.5;
-  q.vy += ((objY - q.y) * 120 - q.vy * 8) * dt;
+  const objY = c.y * 0.5 - p.respira * 1.5 + (p.y - c.y) * 0.4, objX = c.x * 0.5;
+  q.vy += ((objY - q.y) * 70 - q.vy * 4.5) * dt;
   q.y += q.vy * dt;
-  q.vx += ((objX - q.x) * 90 - q.vx * 9) * dt;
+  q.vx += ((objX - q.x) * 60 - q.vx * 6) * dt;
   q.x += q.vx * dt;
+  q.objY = objY;
 }
 
 // ---------------------------------------------------------------- dibujo
@@ -259,8 +262,9 @@ function dibujarCuerpo(p) {
   franjasCuerpo(capas.cuerpo, p);
   // el pecho rebota respecto al torso: diferencia entre su muelle y el del torso
   const c = anim.cuerpo, q = anim.pecho;
-  const rebY = limitar((q.y - (c.y * 0.5 - p.respira * 1.5)) * 1.6, -9, 9);
-  const rebX = limitar((q.x - c.x * 0.5) * 1.2, -5, 5);
+  const rebY = limitar((q.y - (q.objY ?? q.y)) * 2.4, -12, 12);
+  const rebX = limitar((q.x - c.x * 0.5) * 1.5, -6, 6);
+  anim.rebote = { x: rebX, y: rebY };
   // arriba, donde se une al torso, no se mueve; el rebote crece hacia abajo
   franjasCuerpo(capas.pecho, p, rebX, rebY, PECHO.arriba, (PECHO.arriba + PECHO.abajo) / 2);
 }
@@ -693,6 +697,10 @@ async function iniciar() {
 }
 
 // Para controlar el avatar desde la consola del navegador o desde pruebas
-window.avatar = { emocion: ponerEmocion, hablar, parar, cabeza: ponerCabeza, EXPRESIONES, estado: () => ({ emocion, actual }) };
+window.avatar = {
+  emocion: ponerEmocion, hablar, parar, cabeza: ponerCabeza, EXPRESIONES,
+  estado: () => ({ emocion, actual }),
+  pecho: () => ({ ...(anim.rebote || { x: 0, y: 0 }) }),   // rebote actual del pecho, en px
+};
 
 iniciar().catch((err) => console.error('No se pudo iniciar el avatar', err));
