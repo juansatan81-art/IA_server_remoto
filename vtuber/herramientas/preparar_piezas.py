@@ -177,7 +177,7 @@ def cara_del_busto():
     """La cara del busto original sin ojos, boca ni líneas que ahora aportan otras piezas."""
     gris = cv2.imread(str(RAIZ / "arte" / "busto.png"), cv2.IMREAD_GRAYSCALE)[:H].astype(np.float32) / 255
     mascara = np.zeros_like(gris, bool)
-    for y in range(444, 749):
+    for y in range(444, 752):
         oscuros = np.flatnonzero(gris[y, 330:935] < 0.5)
         if oscuros.size == 0:
             continue
@@ -188,9 +188,11 @@ def cara_del_busto():
     gris[622:672, 582:684] = 1          # boca
     for x0, x1 in ((570, 582), (682, 694)):     # arranque del cuello bajo la barbilla
         gris[751:, x0:x1] = 1
-    mascara[738:] = False
-    mascara = cv2.dilate(mascara.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
-    return gris, mascara.astype(np.float32)
+    # borde suave: la barbilla entera y sin un corte seco por debajo
+    mascara = cv2.dilate(mascara.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+    mascara = cv2.GaussianBlur(mascara.astype(np.float32), (0, 0), 1.5)
+    mascara = np.clip(mascara * 1.6, 0, 1)
+    return gris, mascara
 
 
 def montar(t):

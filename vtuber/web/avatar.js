@@ -6,7 +6,8 @@
  *   pelo_largo  -> por franjas: arriba sigue a la cabeza, abajo se balancea con retraso
  *   cuerpo      -> torso y brazos, por franjas: la cabeza "arrastra" los hombros
  *   pecho       -> encima del torso, con su propio muelle
- *   cabeza      -> pelo de la cabeza, cara, ojos, boca, rubor, flequillo, cejas, efectos
+ *   (el pelo de la cabeza va entre el pelo largo y el cuerpo)
+ *   cabeza      -> cara, flequillo, ojos, boca, rubor, cejas, efectos
  *
  * Las piezas de la cabeza y todo lo vectorial usan las coordenadas del busto
  * original (1254 x 1200); BUSTO las lleva al lienzo.
@@ -317,21 +318,21 @@ function pupila(g, lado, cierre, parpadeo) {
   if (lado < 0) { g.translate(2 * EJE, 0); g.scale(-1, 1); }
   if (a.redondo > 0.5) {
     const cx = 490 + gx * 14, cy = 515 + gy * 8;
-    const ry = 72 * Math.max(0.08, 1 - parpadeo);
+    const ry = 60 * Math.max(0.08, 1 - parpadeo);
     g.fillStyle = '#000';
-    g.beginPath(); g.ellipse(cx, cy, 66, ry, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(cx, cy, 54, ry, 0, 0, Math.PI * 2); g.fill();
     if (parpadeo < 0.5) reflejos(g, cx, cy, a.brillo, gx, gy);
     g.restore();
     return;
   }
-  const cx = 490 + gx * 12, cy = 482 + gy * 6;
+  const cx = 490 + gx * 14, cy = 490 + gy * 7;
   const yOut = lerp(456 + a.lidOut, 584, cierre);
   const yIn = lerp(468 + a.lidIn, 584, cierre);
   // la línea del párpado va de (377, yOut) a (603, yIn); se prolonga un poco
   const pend = (yIn - yOut) / 226;
   const linea = () => { g.moveTo(350, yOut - 27 * pend); g.lineTo(630, yIn + 27 * pend); };
   g.save();
-  g.beginPath(); g.ellipse(cx, cy, 113, 110, 0, 0, Math.PI * 2); g.clip();
+  g.beginPath(); g.ellipse(cx, cy, 94, 92, 0, 0, Math.PI * 2); g.clip();
   g.beginPath(); linea(); g.lineTo(630, 640); g.lineTo(350, 640); g.closePath();
   g.fillStyle = '#000'; g.fill();
   if (a.brillo > 0.03 && cierre < 0.4) {
@@ -496,15 +497,28 @@ function dibujarChispas() {
 function dibujar(p) {
   ctx.clearRect(0, 0, W, H);
   dibujarPeloLargo(p);
+
+  // el pelo de la cabeza va detrás del cuerpo (los hombros y el cuello lo tapan)
+  ctx.save();
+  transformarCabeza(p);
+  aBusto();
+  ctx.drawImage(capas.pelo_cabeza, 0, 0);
+  ctx.restore();
+
   dibujarCuerpo(p);
 
   ctx.save();
   transformarCabeza(p);
   aBusto();
-  ctx.drawImage(capas.pelo_cabeza, 0, 0);
   ctx.drawImage(capas.cara, 0, 0);
 
-  // los rasgos se adelantan un poco al girar: sensación de volumen
+  // el flequillo se adelanta un poco más que la cara al girar
+  ctx.save();
+  ctx.translate(p.x * 0.14 + (anim.pelo - p.x) * 0.15, p.y * 0.06);
+  ctx.drawImage(capas.flequillo, 0, 0);
+  ctx.restore();
+
+  // los rasgos van delante del flequillo (el ojo derecho tapa parte del pelo)
   ctx.save();
   ctx.translate(p.x * 0.1, p.y * 0.05);
   const d = anim.parpadeo >= 0 ? (t - anim.parpadeo) / 0.18 : 1;
@@ -514,12 +528,6 @@ function dibujar(p) {
   dibujarOjos(parpadeo);
   dibujarLagrimas();
   dibujarBoca();
-  ctx.restore();
-
-  // el flequillo, delante, se adelanta un poco más que la cara
-  ctx.save();
-  ctx.translate(p.x * 0.14 + (anim.pelo - p.x) * 0.15, p.y * 0.06);
-  ctx.drawImage(capas.flequillo, 0, 0);
   ctx.restore();
 
   dibujarCeja(1);
