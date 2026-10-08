@@ -223,6 +223,8 @@ CORTE_PELO_LARGO = 60
 # Cuánto pelo largo se quita alrededor del pelo de la cabeza (px de diámetro).
 # Más pequeño = asoma más pelo largo junto a la cabeza.
 MARGEN_PELO_LARGO = 81
+# Tamaño de los huecos entre las puntas del pelo de la cabeza que se rellenan de blanco.
+RELLENO_PUNTAS = 61
 
 
 def montar(t):
@@ -263,7 +265,16 @@ def montar(t):
     filas = np.flatnonzero((ha > 0.5).any(1))
     tapado[filas.max() - 60:] = False
     tapado[:filas.max() - CORTE_PELO_LARGO] = True     # más arriba manda el pelo de la cabeza
-    la = np.where(tapado, 0, la)
+    # en las curvas de las puntas del pelo de la cabeza quedaría un hueco
+    # transparente: ahí se deja pelo largo, en blanco y sin sus líneas
+    cabeza = (ha > 0.5).astype(np.uint8)
+    cerrada = cv2.morphologyEx(cabeza, cv2.MORPH_CLOSE,
+                               cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (RELLENO_PUNTAS, RELLENO_PUNTAS)))
+    huecos = (cerrada > 0) & (cabeza == 0)
+    huecos = cv2.dilate(huecos.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    la = np.where(tapado & ~huecos, 0, la)
+    la = np.where(huecos, np.maximum(la, 1.0), la)
+    lg = np.where(huecos, 1.0, lg)
     guardar("pelo_largo", lg, la)
     cg, ca = alargar_cuello(*al_lienzo(cg, ca))
     guardar("cuerpo", cg, ca)
