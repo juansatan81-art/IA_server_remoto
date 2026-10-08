@@ -666,7 +666,8 @@ async function iniciar() {
   BUSTO = modelo.busto_a_lienzo;
   PEGATINAS = modelo.pegatinas;
   PECHO = modelo.pecho;
-  CUELLO_Y = aLienzoY(760); CORTE = Math.round(aLienzoY(756)); CUERPO_ARRIBA = Math.round(aLienzoY(742));
+  CUELLO_Y = aLienzoY(760); CORTE = Math.round(aLienzoY(756));
+  CUERPO_ARRIBA = modelo.cuerpo_arriba ?? Math.round(aLienzoY(742));
   const nombres = ['pelo_largo', 'cuerpo', 'pecho', 'pelo_cabeza', 'cara', 'ojos_blanco', 'flequillo',
     ...Object.keys(PEGATINAS)];
   const imagenes = await Promise.all(nombres.map((n) => cargarImagen(`capas/${n}.png`)));

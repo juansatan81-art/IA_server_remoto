@@ -194,6 +194,29 @@ def separar_brazos(g, a, torso_a, pelo_g, pelo_a):
     return brazos & (a > 0.3)
 
 
+def alargar_cuello(g, a, alto=85):
+    """Prolonga hacia arriba las dos líneas del cuello y rellena de blanco entre ellas.
+
+    Así, aunque la cabeza suba o se ladee, bajo la barbilla siempre hay cuello.
+    """
+    filas = np.flatnonzero((a > 0.5).any(1))
+    y0 = filas.min() + 14                      # justo bajo el borde del cuello de la camisa
+    centro = LW // 2
+    trozo = (g[y0:y0 + 16, centro - 90:centro + 90] < 0.35) & (a[y0:y0 + 16, centro - 90:centro + 90] > 0.5)
+    cols = np.flatnonzero(trozo.mean(0) > 0.6) + centro - 90
+    izq = cols[cols < centro]
+    der = cols[cols > centro]
+    xi0, xi1 = izq.min(), izq.max()
+    xd0, xd1 = der.min(), der.max()
+    arriba = y0 - alto
+    g, a = g.copy(), a.copy()
+    g[arriba:y0 + 4, xi0:xd1 + 1] = 1          # relleno blanco (tapa también el borde del cuello)
+    a[arriba:y0 + 4, xi0:xd1 + 1] = 1
+    for x0, x1 in ((xi0, xi1), (xd0, xd1)):    # las dos líneas, del mismo grosor que las originales
+        g[arriba:y0 + 4, x0:x1 + 1] = 0.05
+    return g, a
+
+
 def montar(t):
     DESTINO.mkdir(parents=True, exist_ok=True)
     T = {k: (v["escala"], v["dx"], v["dy"]) for k, v in t.items()}
@@ -230,7 +253,9 @@ def montar(t):
     tapado[:filas.max() - 60] = True     # por encima de las puntas manda el pelo de la cabeza
     la = np.where(tapado, 0, la)
     guardar("pelo_largo", lg, la)
-    guardar("cuerpo", *al_lienzo(cg, ca))
+    cg, ca = alargar_cuello(*al_lienzo(cg, ca))
+    guardar("cuerpo", cg, ca)
+    arriba_cuerpo = int(np.flatnonzero((ca > 0.5).any(1)).min())
     pg, pa = al_lienzo(pg, pa)
     guardar("pecho", pg, pa)
     filas_pecho = np.flatnonzero((pa > 0.5).any(1))
@@ -265,6 +290,7 @@ def montar(t):
         "busto_a_lienzo": dict(zip(("escala", "dx", "dy"), busto_a_lienzo)),
         "pegatinas": pegatinas,
         "pecho": {"arriba": int(filas_pecho.min()), "abajo": int(filas_pecho.max())},
+        "cuerpo_arriba": arriba_cuerpo,
     }
     (DESTINO / "piezas.json").write_text(json.dumps(modelo, indent=2, ensure_ascii=False))
     print("Capas en", DESTINO)
