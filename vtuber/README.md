@@ -22,7 +22,10 @@ Tú / el chat ──► Cerebro (modelo local) ──► "[feliz] ¡Hola! [sorpr
   cabeza.
 - **El cuerpo sigue a la cabeza con retraso:** el torso se dobla un poco, como
   si la cabeza tirara de él.
-- **Pelo con física:** la parte larga se balancea con inercia y algo de viento.
+- **Pelo con física:** la parte larga se balancea con inercia y algo de viento,
+  y el flequillo se mueve un poco más que la cara al girar (sensación de volumen).
+- **Pecho con física:** rebota con su propio muelle al moverse el torso.
+- **Ojos que miran:** la forma negra se desplaza dentro del contorno del ojo.
 - La IA puede **cambiar de emoción a mitad de frase**.
 
 ## Instalación (en tu PC)
@@ -79,7 +82,7 @@ python servidor.py
   que diga frases exactas, cambias emociones y ladeas la cabeza. Tiene vista
   previa.
 - **Avatar para OBS:** añade una *Fuente de navegador* con la URL
-  `http://127.0.0.1:8765/avatar`, tamaño 1254 × 1200, y marca *Controlar audio
+  `http://127.0.0.1:8765/avatar`, tamaño 1300 × 1140, y marca *Controlar audio
   mediante OBS*. El fondo es transparente.
 
 Opciones en la URL del avatar:
@@ -120,25 +123,38 @@ está explicado al principio de `servidor.py`.
   `config.json` para sustituir la plantilla de `cerebro.py`.
 - **Emociones:** `web/avatar.js` → `EXPRESIONES`. Cada emoción es una lista de
   valores: párpados, cejas, curva de la boca, rubor, lágrimas, etc.
-- **Cambiar el dibujo:** sustituye `arte/busto.png` y ejecuta
-  `python herramientas/preparar_capas.py`. Las coordenadas de ojos, boca y
-  cuerpo están pensadas para esta ilustración; con otra habría que ajustarlas.
+- **Cambiar o añadir piezas:** están en `arte/piezas/`. Después ejecuta
+  `python herramientas/preparar_piezas.py` (antes, una vez:
+  `pip install -r herramientas/requisitos.txt`). Si cambias una pieza por otra
+  con distinta posición, añade `--alinear` para recalcular su encaje.
 
 ## Cómo está hecho
 
-`herramientas/preparar_capas.py` separa la ilustración en tres capas: pelo,
-cuerpo y cara. Los recortes siguen el contorno real del dibujo **fila a fila**,
-píxel a píxel. Ojos y boca se borran del dibujo y el avatar los dibuja en
-vectorial para poder animarlos.
+El avatar se monta con las piezas dibujadas por separado (`arte/piezas/`).
+`herramientas/preparar_piezas.py`:
+
+1. **Quita el fondo magenta** recuperando la transparencia real del trazo, y
+   descarta los restos medio borrados (solo se queda con las zonas nítidas).
+2. **Alinea cada pieza** buscando la escala y la posición en que sus líneas
+   coinciden con las del dibujo de referencia. Las piezas de cuerpo encajan con
+   "La imagen maestra" y las de cabeza con el busto original; el encaje y su
+   error en píxeles quedan en `arte/piezas/alineacion.json`.
+3. **Separa los brazos** de la imagen maestra: son las zonas cerradas por líneas
+   que no tocan el contorno del pelo.
+4. **Limpia las líneas que sobran** donde se solapan piezas: el contorno del pelo
+   largo bajo la cabeza, el borde de arriba del flequillo, la línea de la cara
+   bajo el flequillo y el arranque del cuello bajo la barbilla.
 
 En el navegador, la cabeza se mueve con una transformación. El pelo largo y el
 torso se dibujan en **tiras horizontales de 2 px**, y cada tira se desplaza un
 poco distinto: así se doblan de forma continua y sin cortes, como la suma de
-muchos rectángulos que aproxima una curva.
+muchos rectángulos que aproxima una curva. El pecho usa las mismas tiras con un
+rebote que crece hacia abajo, para que arriba siga pegado al torso.
 
 ## Ideas para seguir
 
 - Leer el chat de Twitch o YouTube y mandarlo a `/api/chat`.
 - Reconocimiento de voz (por ejemplo Whisper) para hablar con ella por micrófono.
+- Brazos como piezas separadas (brazo y antebrazo) para poder moverlos.
 - Poses de cuerpo entero (brazos en jarra, aplaudir…) usando las otras
   ilustraciones como cambios de pose.

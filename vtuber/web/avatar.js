@@ -1,18 +1,25 @@
 'use strict';
 /*
- * Avatar 2D animado.
+ * Avatar 2D animado, montado con las piezas dibujadas (ver herramientas/preparar_piezas.py).
  *
- * La ilustración está separada en tres capas (pelo, cuerpo, cara). La cabeza
- * se mueve con una transformación (desplazamiento + inclinación) y el pelo
- * largo se dibuja por franjas horizontales que se desplazan cada una un poco
- * distinto: así se dobla sin cortes y se balancea con retraso.
- * Ojos, cejas, boca y efectos se dibujan en vectorial encima.
+ * Capas, de atrás hacia delante:
+ *   pelo_largo  -> por franjas: arriba sigue a la cabeza, abajo se balancea con retraso
+ *   cuerpo      -> torso y brazos, por franjas: la cabeza "arrastra" los hombros
+ *   pecho       -> encima del torso, con su propio muelle
+ *   cabeza      -> pelo de la cabeza, cara, ojos, boca, rubor, flequillo, cejas, efectos
+ *
+ * Las piezas de la cabeza y todo lo vectorial usan las coordenadas del busto
+ * original (1254 x 1200); BUSTO las lleva al lienzo.
  */
 
-const W = 1254, H = 1200;
-const CUELLO_Y = 760;   // pivote de la inclinación de la cabeza
-const CORTE = 756;      // por encima todo se mueve con la cabeza
-const EJE = 631.5;      // eje de simetría de la cara
+let W = 1300, H = 1140;
+let BUSTO = { escala: 1, dx: 0, dy: 0 };
+let PEGATINAS = {};
+let PECHO = { arriba: 0, abajo: 1 };
+let CUELLO_Y = 610;       // pivote de la inclinación de la cabeza (lienzo)
+let CORTE = 607;          // por encima, el pelo largo se mueve rígido con la cabeza
+let CUERPO_ARRIBA = 595;
+const EJE = 631.5;        // eje de simetría de la cara (busto)
 const FRANJA = 2;
 
 const lienzo = document.getElementById('lienzo');
@@ -26,7 +33,7 @@ const NEUTRAL = {
   redondo: 0,                 // ojos redondos (sorpresa)
   brillo: 0,                  // reflejos blancos en los ojos
   cejaVis: 0, cejaY: 0, cejaAng: 0, cejaAsim: 0,
-  curva: 1, ancho: 1, asim: 0, redonda: 0, abierta: 0, dientes: 0,
+  curva: 1, ancho: 1, asim: 0,          // boca vectorial (presumida, pensativa)
   rubor: 0, lagrimas: 0, enojo: 0, sudor: 0, chispas: 0,
   inclinacion: 0, cabezaY: 0,
   miradaX: 0, miradaY: 0, miradaFija: 0,
@@ -34,23 +41,25 @@ const NEUTRAL = {
 
 const EXPRESIONES = {
   neutral: {},
-  feliz: { feliz: 1, curva: 1.25, ancho: 1.15, abierta: 0.3, dientes: 1, chispas: 1,
-    rubor: 0.35, cejaVis: 0.8, cejaY: -12, cejaAng: -6 },
-  enojada: { lidIn: 48, lidOut: 4, cejaVis: 1, cejaY: 10, cejaAng: 26, curva: -0.7,
-    ancho: 0.85, enojo: 1, cabezaY: 4 },
-  triste: { lidOut: 34, lidIn: 6, brillo: 1, cejaVis: 1, cejaAng: -22, curva: -0.8,
-    ancho: 0.8, cabezaY: 10, inclinacion: 0.02, miradaY: 0.6, miradaFija: 0.6 },
-  llorando: { lidOut: 38, lidIn: 8, brillo: 1, cejaVis: 1, cejaAng: -26, curva: -1,
-    ancho: 0.9, abierta: 0.25, lagrimas: 1, cabezaY: 12, inclinacion: 0.015 },
-  sorprendida: { redondo: 1, brillo: 1, cejaVis: 1, cejaY: -24, redonda: 1,
-    abierta: 0.35, cabezaY: -6 },
-  avergonzada: { lidOut: 22, lidIn: 22, rubor: 1, sudor: 1, curva: 0.35, ancho: 0.65,
-    asim: -0.4, cejaVis: 0.9, cejaAng: -14, brillo: 0.6, miradaX: -1, miradaY: 0.5,
-    miradaFija: 1, inclinacion: -0.02 },
+  feliz: { feliz: 1, chispas: 1, rubor: 0.35, cejaVis: 0.8, cejaY: -12, cejaAng: -6 },
+  enojada: { lidIn: 48, lidOut: 4, cejaVis: 1, cejaY: 10, cejaAng: 26, enojo: 1, cabezaY: 4 },
+  triste: { lidOut: 34, lidIn: 6, brillo: 1, cejaVis: 1, cejaAng: -22, cabezaY: 10,
+    inclinacion: 0.02, miradaY: 0.6, miradaFija: 0.6 },
+  llorando: { lidOut: 38, lidIn: 8, brillo: 1, cejaVis: 1, cejaAng: -26, lagrimas: 1,
+    cabezaY: 12, inclinacion: 0.015 },
+  sorprendida: { redondo: 1, brillo: 1, cejaVis: 1, cejaY: -24, cabezaY: -6 },
+  avergonzada: { lidOut: 22, lidIn: 22, rubor: 1, sudor: 1, cejaVis: 0.9, cejaAng: -14,
+    brillo: 0.6, miradaX: -1, miradaY: 0.5, miradaFija: 1, inclinacion: -0.02 },
   presumida: { lidOut: 36, lidIn: 26, curva: 1, asim: 1, cejaVis: 1, cejaY: -4,
     cejaAsim: 16, inclinacion: -0.018 },
   pensativa: { lidOut: 14, lidIn: 8, curva: 0.1, ancho: 0.6, asim: 0.5, cejaVis: 0.9,
     cejaAsim: 12, miradaX: 0.9, miradaY: -0.9, miradaFija: 1, inclinacion: 0.025 },
+};
+
+// Boca de cada emoción cuando no habla: una de tus piezas o la vectorial
+const BOCAS = {
+  neutral: 'sonrisa', feliz: 'a', enojada: 'triste', triste: 'triste', llorando: 'o',
+  sorprendida: 'o', avergonzada: 'sonrisa', presumida: 'vector', pensativa: 'vector',
 };
 
 const actual = { ...NEUTRAL };
@@ -65,6 +74,7 @@ const anim = {
   mirada: { x: 0, y: 0 }, miradaObj: { x: 0, y: 0 }, proximaMirada: 1,
   pelo: 0, peloV: 0,
   cuerpo: { x: 0, vx: 0, y: 0, vy: 0, incl: 0 },   // el torso sigue a la cabeza con retraso
+  pecho: { x: 0, vx: 0, y: 0, vy: 0 },             // y el pecho al torso
   impulso: null,
   apertura: 0,
   cabeza: { x: 0, y: 0, incl: 0 }, cabezaObj: { x: 0, y: 0, incl: 0 },   // postura pedida desde fuera
@@ -92,6 +102,7 @@ const lerp = (a, b, k) => a + (b - a) * k;
 const limitar = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const suave = (a, b, x) => { const k = limitar((x - a) / (b - a)); return k * k * (3 - 2 * k); };
 const azar = (a, b) => a + Math.random() * (b - a);
+const aLienzoY = (y) => BUSTO.escala * y + BUSTO.dy;
 
 function cargarImagen(src) {
   return new Promise((ok, mal) => {
@@ -169,18 +180,18 @@ function postura() {
     if (imp.tipo === 'avergonzada') x -= 10 * Math.exp(-d * 2) * Math.min(1, d * 6);
     if (d > 3) anim.impulso = null;
   }
-
-  // muelle del pelo: sigue a la cabeza con retraso
   return { x, y, incl, respira };
 }
 
+// muelle del pelo: sigue a la cabeza con retraso
 function moverPelo(cabezaX, dt) {
   const fuerza = (cabezaX - anim.pelo) * 55 - anim.peloV * 5;
   anim.peloV += fuerza * dt;
   anim.pelo += anim.peloV * dt;
 }
 
-// La cabeza "arrastra" al cuerpo: un muelle más lento y pesado que el del pelo.
+// La cabeza "arrastra" al cuerpo: un muelle más lento y pesado que el del pelo,
+// y el pecho sigue al torso con otro muelle más rápido y blando.
 function moverCuerpo(p, dt) {
   const c = anim.cuerpo;
   c.vx += ((p.x - c.x) * 18 - c.vx * 6) * dt;
@@ -188,6 +199,13 @@ function moverCuerpo(p, dt) {
   c.vy += ((p.y - c.y) * 22 - c.vy * 7) * dt;
   c.y += c.vy * dt;
   c.incl = lerp(c.incl, p.incl, 1 - Math.exp(-dt * 3));
+
+  const q = anim.pecho;
+  const objY = c.y * 0.5 - p.respira * 1.5, objX = c.x * 0.5;
+  q.vy += ((objY - q.y) * 120 - q.vy * 8) * dt;
+  q.y += q.vy * dt;
+  q.vx += ((objX - q.x) * 90 - q.vx * 9) * dt;
+  q.x += q.vx * dt;
 }
 
 // ---------------------------------------------------------------- dibujo
@@ -198,12 +216,15 @@ function transformarCabeza(p) {
   ctx.transform(1, 0, -p.incl, 1, p.incl * CUELLO_Y, 0);
 }
 
-function dibujarPelo(p) {
-  // parte alta: rígida con la cabeza
+function aBusto(g = ctx) {
+  g.transform(BUSTO.escala, 0, 0, BUSTO.escala, BUSTO.dx, BUSTO.dy);
+}
+
+function dibujarPeloLargo(p) {
+  // parte alta: rígida con la cabeza (2 px de solape para que no quede rendija)
   ctx.save();
   transformarCabeza(p);
-  // 2 px de solape con las franjas para que no quede una rendija
-  ctx.drawImage(capas.pelo, 0, 0, W, CORTE + 2, 0, 0, W, CORTE + 2);
+  ctx.drawImage(capas.pelo_largo, 0, 0, W, CORTE + 2, 0, 0, W, CORTE + 2);
   ctx.restore();
   // parte baja: franjas que se doblan y se balancean
   for (let y = CORTE; y < H; y += FRANJA) {
@@ -213,103 +234,127 @@ function dibujarPelo(p) {
     const viento = 2.5 * Math.sin(t * 1.3 - m * 0.012);
     const dx = p.x * peso + (anim.pelo - p.x) * libre * 1.3 + viento * libre;
     const dy = p.y * peso;
-    ctx.drawImage(capas.pelo, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
+    ctx.drawImage(capas.pelo_largo, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
   }
 }
 
 // El torso se dibuja por franjas: arriba (hombros) sigue mucho a la cabeza y
 // abajo casi nada, así se dobla como una columna en vez de moverse en bloque.
-const CUERPO_ARRIBA = 742;
-function dibujarCuerpo(p) {
+function franjasCuerpo(img, p, extraX = 0, extraY = 0, desde = 0, hasta = 1) {
   const c = anim.cuerpo;
   const crecer = p.respira * 0.006;           // respiración: se estira desde abajo
   for (let y = CUERPO_ARRIBA; y < H; y += FRANJA) {
     const m = y + FRANJA / 2;
     const abajo = suave(CUERPO_ARRIBA, H, m);
     const peso = lerp(0.7, 0.06, abajo);
-    const dx = c.x * peso + c.incl * (H - m) * 0.35;
-    const dy = c.y * peso * 0.8 - (H - m) * crecer;
-    ctx.drawImage(capas.cuerpo, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
+    const k = suave(desde, hasta, m);          // cuánto le afecta el desplazamiento extra
+    const dx = c.x * peso + c.incl * (H - m) * 0.35 + extraX * k;
+    const dy = c.y * peso * 0.8 - (H - m) * crecer + extraY * k;
+    ctx.drawImage(img, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
   }
 }
 
-function trazo(ancho, color = '#000') {
-  ctx.lineWidth = ancho;
-  ctx.strokeStyle = color;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+function dibujarCuerpo(p) {
+  franjasCuerpo(capas.cuerpo, p);
+  // el pecho rebota respecto al torso: diferencia entre su muelle y el del torso
+  const c = anim.cuerpo, q = anim.pecho;
+  const rebY = limitar((q.y - (c.y * 0.5 - p.respira * 1.5)) * 1.6, -9, 9);
+  const rebX = limitar((q.x - c.x * 0.5) * 1.2, -5, 5);
+  // arriba, donde se une al torso, no se mueve; el rebote crece hacia abajo
+  franjasCuerpo(capas.pecho, p, rebX, rebY, PECHO.arriba, (PECHO.arriba + PECHO.abajo) / 2);
 }
 
-// Ojo izquierdo; el derecho se dibuja reflejado.
-function dibujarOjo(lado, parpadeo) {
+function trazo(ancho, color = '#000', g = ctx) {
+  g.lineWidth = ancho;
+  g.strokeStyle = color;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+}
+
+function pegatina(nombre, alfa = 1, sx = 1, sy = 1, g = ctx) {
+  const p = PEGATINAS[nombre], img = capas[nombre];
+  if (!p || !img || alfa < 0.01) return;
+  const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+  g.globalAlpha = alfa;
+  g.drawImage(img, cx - p.w * sx / 2, cy - p.h * sy / 2, p.w * sx, p.h * sy);
+  g.globalAlpha = 1;
+}
+
+// --- ojos: tu contorno blanco + la forma negra, que se mueve para mirar
+const OJOS = { x: 340, y: 420, w: 590, h: 210 };   // zona de los ojos (busto)
+const lienzoOjos = document.createElement('canvas');
+lienzoOjos.width = OJOS.w; lienzoOjos.height = OJOS.h;
+const gOjos = lienzoOjos.getContext('2d');
+
+function dibujarOjos(parpadeo) {
+  const a = actual;
+  if (a.feliz > 0.5) {
+    pegatina('ojo_feliz_izq'); pegatina('ojo_feliz_der');
+    return;
+  }
+  if (parpadeo > 0.72 && a.redondo < 0.5) {
+    pegatina('ojo_cerrado_izq'); pegatina('ojo_cerrado_der');
+    return;
+  }
+  const g = gOjos;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, OJOS.w, OJOS.h);
+  g.setTransform(1, 0, 0, 1, -OJOS.x, -OJOS.y);
+  g.drawImage(capas.ojos_blanco, 0, 0);
+  const cierre = a.redondo > 0.5 ? 0 : parpadeo / 0.72 * 0.8;
+  for (const lado of [1, -1]) pupila(g, lado, cierre, parpadeo);
+  // todo queda dentro de tu contorno del ojo
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(capas.ojos_blanco, 0, 0);
+  g.globalCompositeOperation = 'source-over';
+  ctx.drawImage(lienzoOjos, OJOS.x, OJOS.y);
+}
+
+function pupila(g, lado, cierre, parpadeo) {
   const a = actual;
   const gx = anim.mirada.x * lado, gy = anim.mirada.y;
-  ctx.save();
-  if (lado < 0) { ctx.translate(2 * EJE, 0); ctx.scale(-1, 1); }
-
-  // línea de la cuenca (el arco fino de fuera)
-  const arco = 1 - Math.max(a.feliz, a.redondo);
-  if (arco > 0.02) {
-    ctx.globalAlpha = arco;
-    trazo(7);
-    ctx.beginPath();
-    ctx.ellipse(490, 470, 135, 122, 0, Math.PI * 0.56, Math.PI * 0.985);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  if (a.feliz > 0.5) {
-    // ^ ^
-    trazo(13);
-    ctx.beginPath();
-    ctx.ellipse(490, 560 + gy * 4, 84, 66, 0, Math.PI * 1.1, Math.PI * 1.9);
-    ctx.stroke();
-  } else if (a.redondo > 0.5) {
-    const cx = 490 + gx * 10, cy = 512 + gy * 8;
+  g.save();
+  if (lado < 0) { g.translate(2 * EJE, 0); g.scale(-1, 1); }
+  if (a.redondo > 0.5) {
+    const cx = 490 + gx * 14, cy = 515 + gy * 8;
     const ry = 72 * Math.max(0.08, 1 - parpadeo);
-    ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 66, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (parpadeo < 0.5) reflejos(cx, cy, a.brillo, gx, gy);
-  } else {
-    const cx = 490 + gx * 6, cy = 482 + gy * 3;
-    const cierre = parpadeo;
-    const yOut = lerp(456 + a.lidOut, 584, cierre);
-    const yIn = lerp(468 + a.lidIn, 584, cierre);
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 113, 110, 0, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.beginPath();
-    // la línea del párpado va de (377, yOut) a (603, yIn); se prolonga un poco
-    const pend = (yIn - yOut) / 226;
-    ctx.moveTo(360, yOut - 17 * pend);
-    ctx.lineTo(620, yIn + 17 * pend);
-    ctx.lineTo(620, 620);
-    ctx.lineTo(360, 620);
-    ctx.closePath();
-    ctx.fillStyle = '#000';
-    ctx.fill();
-    if (a.brillo > 0.03 && cierre < 0.5) {
-      ctx.clip();
-      reflejos(cx, Math.max(cy + 20, (yOut + yIn) / 2 + 40), a.brillo, gx, gy);
-    }
-    ctx.restore();
+    g.fillStyle = '#000';
+    g.beginPath(); g.ellipse(cx, cy, 66, ry, 0, 0, Math.PI * 2); g.fill();
+    if (parpadeo < 0.5) reflejos(g, cx, cy, a.brillo, gx, gy);
+    g.restore();
+    return;
   }
-  ctx.restore();
+  const cx = 490 + gx * 12, cy = 482 + gy * 6;
+  const yOut = lerp(456 + a.lidOut, 584, cierre);
+  const yIn = lerp(468 + a.lidIn, 584, cierre);
+  // la línea del párpado va de (377, yOut) a (603, yIn); se prolonga un poco
+  const pend = (yIn - yOut) / 226;
+  const linea = () => { g.moveTo(350, yOut - 27 * pend); g.lineTo(630, yIn + 27 * pend); };
+  g.save();
+  g.beginPath(); g.ellipse(cx, cy, 113, 110, 0, 0, Math.PI * 2); g.clip();
+  g.beginPath(); linea(); g.lineTo(630, 640); g.lineTo(350, 640); g.closePath();
+  g.fillStyle = '#000'; g.fill();
+  if (a.brillo > 0.03 && cierre < 0.4) {
+    g.clip();
+    reflejos(g, cx, Math.max(cy + 20, (yOut + yIn) / 2 + 40), a.brillo, gx, gy);
+  }
+  g.restore();
+  // párpado bajado: lo de encima es piel y la línea del párpado pasa a ser el borde
+  if (yOut > 461 || yIn > 473) {
+    g.beginPath(); g.moveTo(350, 420); g.lineTo(630, 420); g.lineTo(630, yIn + 27 * pend);
+    g.lineTo(350, yOut - 27 * pend); g.closePath();
+    g.fillStyle = '#fff'; g.fill();
+    trazo(8, '#000', g); g.beginPath(); linea(); g.stroke();
+  }
+  g.restore();
 }
 
-function reflejos(cx, cy, fuerza, gx, gy) {
-  ctx.globalAlpha = limitar(fuerza);
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.ellipse(cx - 28 + gx * 8, cy - 18 + gy * 6, 20, 16, -0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cx + 26 + gx * 8, cy + 20 + gy * 6, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
+function reflejos(g, cx, cy, fuerza, gx, gy) {
+  g.globalAlpha = limitar(fuerza);
+  g.fillStyle = '#fff';
+  g.beginPath(); g.ellipse(cx - 28 + gx * 8, cy - 18 + gy * 6, 20, 16, -0.4, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx + 26 + gx * 8, cy + 20 + gy * 6, 8, 0, Math.PI * 2); g.fill();
+  g.globalAlpha = 1;
 }
 
 function dibujarCeja(lado) {
@@ -328,91 +373,37 @@ function dibujarCeja(lado) {
   ctx.globalAlpha = a.cejaVis;
   trazo(22, '#fff'); camino(); ctx.stroke();
   trazo(10); camino(); ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
+// --- boca: tus piezas; al hablar alterna entre la "O" y la "A" según el volumen
 function dibujarBoca() {
-  const a = actual;
-  const ab = limitar(anim.apertura + a.abierta);
-  const cx = 632, base = 638;
-
-  if (a.redonda > 0.5) {
-    const rx = 16 + ab * 10, ry = 18 + ab * 20;
-    const cy = 650 + ab * 8;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#262626';
-    ctx.fill();
-    ctx.save(); ctx.clip();
-    ctx.fillStyle = '#8a8a8a';
-    ctx.beginPath(); ctx.ellipse(cx, cy + ry * 0.8, rx * 0.8, ry * 0.45, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-    trazo(6); ctx.stroke();
-    return;
+  const ap = anim.apertura;
+  let forma = BOCAS[emocion] || 'sonrisa';
+  if (ap > 0.12) forma = ap > 0.45 ? 'a' : 'o';
+  if (forma === 'vector') return dibujarBocaVector();
+  if (forma === 'a') {
+    const abre = ap > 0.12 ? 0.7 + 0.45 * ap : 0.75;
+    pegatina('boca_a', 1, 0.85 + 0.15 * abre, abre);
+  } else if (forma === 'o') {
+    pegatina('boca_o', 1, 1, ap > 0.12 ? 0.8 + 0.5 * ap : 1);
+  } else {
+    pegatina('boca_' + forma);
   }
+}
 
+function dibujarBocaVector() {
+  const a = actual;
+  const cx = 632, base = 638;
   const mitad = 40 * a.ancho;
   const xl = cx - mitad, xr = cx + mitad;
   const yl = base + a.asim * 6, yr = base - a.asim * 20;
-  const medio = (yl + yr) / 2;
-
-  if (ab < 0.04) {
-    trazo(7);
-    ctx.beginPath();
-    ctx.moveTo(xl, yl);
-    ctx.quadraticCurveTo(cx + a.asim * 8, medio + a.curva * 34, xr, yr);
-    ctx.stroke();
-    return;
-  }
-
-  const arriba = medio + a.curva * 12 - ab * 6;
-  const abajo = arriba + 16 + ab * 84 + Math.max(0, a.curva) * 14;
+  trazo(7);
   ctx.beginPath();
   ctx.moveTo(xl, yl);
-  ctx.quadraticCurveTo(cx, arriba, xr, yr);
-  ctx.quadraticCurveTo(cx, abajo, xl, yl);
-  ctx.closePath();
-  ctx.fillStyle = '#262626';
-  ctx.fill();
-  ctx.save();
-  ctx.clip();
-  if (a.dientes > 0.3) {
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(xl - 5, Math.min(yl, yr) - 40, mitad * 2 + 10, (arriba - Math.min(yl, yr)) / 2 + 48);
-  }
-  const fondo = (yl + yr) / 4 + (arriba + abajo) / 4 + (abajo - arriba) * 0.3;
-  ctx.fillStyle = '#8a8a8a';
-  ctx.beginPath();
-  ctx.ellipse(cx, fondo + 8, mitad * 0.6, 18, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  trazo(6);
-  ctx.beginPath();
-  ctx.moveTo(xl, yl);
-  ctx.quadraticCurveTo(cx, arriba, xr, yr);
-  ctx.quadraticCurveTo(cx, abajo, xl, yl);
-  ctx.closePath();
+  ctx.quadraticCurveTo(cx + a.asim * 8, (yl + yr) / 2 + a.curva * 34, xr, yr);
   ctx.stroke();
-}
-
-function dibujarRubor() {
-  const r = actual.rubor;
-  if (r < 0.02) return;
-  for (const lado of [1, -1]) {
-    const cx = lado > 0 ? 432 : 2 * EJE - 432, cy = 640;
-    ctx.globalAlpha = r * 0.5;
-    ctx.fillStyle = '#f2a7b8';
-    ctx.beginPath(); ctx.ellipse(cx, cy, 44, 18, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = r;
-    trazo(4);
-    for (let i = -1; i <= 1; i++) {
-      ctx.beginPath();
-      ctx.moveTo(cx + i * 22 - 6, cy + 9);
-      ctx.lineTo(cx + i * 22 + 6, cy - 9);
-      ctx.stroke();
-    }
-  }
-  ctx.globalAlpha = 1;
 }
 
 function gota(x, y, r) {
@@ -504,23 +495,31 @@ function dibujarChispas() {
 
 function dibujar(p) {
   ctx.clearRect(0, 0, W, H);
-  dibujarPelo(p);
+  dibujarPeloLargo(p);
   dibujarCuerpo(p);
 
   ctx.save();
   transformarCabeza(p);
-  ctx.drawImage(capas.cara, 0, 0, W, CORTE, 0, 0, W, CORTE);
+  aBusto();
+  ctx.drawImage(capas.pelo_cabeza, 0, 0);
+  ctx.drawImage(capas.cara, 0, 0);
 
   // los rasgos se adelantan un poco al girar: sensación de volumen
   ctx.save();
-  ctx.translate(p.x * 0.08, p.y * 0.04);
-  const d = anim.parpadeo >= 0 ? (t - anim.parpadeo) / 0.16 : 1;
+  ctx.translate(p.x * 0.1, p.y * 0.05);
+  const d = anim.parpadeo >= 0 ? (t - anim.parpadeo) / 0.18 : 1;
   const parpadeo = d < 1 ? Math.sin(d * Math.PI) : 0;
-  dibujarRubor();
-  dibujarOjo(1, parpadeo);
-  dibujarOjo(-1, parpadeo);
+  pegatina('rubor_izq', actual.rubor);
+  pegatina('rubor_der', actual.rubor);
+  dibujarOjos(parpadeo);
   dibujarLagrimas();
   dibujarBoca();
+  ctx.restore();
+
+  // el flequillo, delante, se adelanta un poco más que la cara
+  ctx.save();
+  ctx.translate(p.x * 0.14 + (anim.pelo - p.x) * 0.15, p.y * 0.06);
+  ctx.drawImage(capas.flequillo, 0, 0);
   ctx.restore();
 
   dibujarCeja(1);
@@ -653,9 +652,17 @@ function conectar() {
 
 // ---------------------------------------------------------------- arranque
 async function iniciar() {
-  const [pelo, cuerpo, cara] = await Promise.all(
-    ['pelo', 'cuerpo', 'cara'].map((n) => cargarImagen(`capas/${n}.png`)));
-  capas = { pelo, cuerpo, cara };
+  const modelo = await (await fetch('capas/piezas.json')).json();
+  W = modelo.lienzo.ancho; H = modelo.lienzo.alto;
+  lienzo.width = W; lienzo.height = H;
+  BUSTO = modelo.busto_a_lienzo;
+  PEGATINAS = modelo.pegatinas;
+  PECHO = modelo.pecho;
+  CUELLO_Y = aLienzoY(760); CORTE = Math.round(aLienzoY(756)); CUERPO_ARRIBA = Math.round(aLienzoY(742));
+  const nombres = ['pelo_largo', 'cuerpo', 'pecho', 'pelo_cabeza', 'cara', 'ojos_blanco', 'flequillo',
+    ...Object.keys(PEGATINAS)];
+  const imagenes = await Promise.all(nombres.map((n) => cargarImagen(`capas/${n}.png`)));
+  capas = Object.fromEntries(nombres.map((n, i) => [n, imagenes[i]]));
 
   if (parametros.get('fondo')) document.body.style.background = parametros.get('fondo');
   if (parametros.get('emocion')) ponerEmocion(parametros.get('emocion'));
