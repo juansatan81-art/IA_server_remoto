@@ -231,6 +231,9 @@ def montar(t):
     pg, pa = colocar_pieza(*pieza("pecho"), T["torso"], tam_m)   # mismo dibujo que el torso
     lg, la = colocar_pieza(*pieza("pelo_largo", espejo=True), T["pelo_largo"], tam_m)
     brazos = separar_brazos(g, a, ta, lg, la)
+    # la curva del pecho es del pecho, no del brazo: si se queda en el cuerpo,
+    # al rebotar el pecho aparece un contorno doble
+    brazos &= ~(pa > 0.3)
 
     # cuerpo = brazos de la maestra + torso sin pecho encima
     cg = np.where(brazos, g, 1.0)

@@ -22,8 +22,15 @@ let CORTE = 607;          // por encima, el pelo largo se mueve rígido con la c
 let CUERPO_ARRIBA = 595;
 const EJE = 631.5;        // eje de simetría de la cara (busto)
 const FRANJA = 2;
-// Pecho "gelatina" (por defecto) o "firme" (el de antes): ?pecho=firme
-const PECHO_GELATINA = new URLSearchParams(location.search).get('pecho') !== 'firme';
+// Cómo se comporta el pecho. Por defecto "gelatina"; para comparar:
+//   ?pecho=suave (gelatina más contenida)   ?pecho=firme (sin deformarse)
+const ESTILOS_PECHO = {
+  //          rigidez freno ganancia máx  tirón retraso(s) aplastar
+  gelatina: { rigidez: 38, freno: 1.3, ganancia: 3.6, max: 18, tiron: 0.7, retraso: 0.15, aplastar: 0.0018 },
+  suave: { rigidez: 55, freno: 2.4, ganancia: 2.4, max: 12, tiron: 0.4, retraso: 0.09, aplastar: 0.0015 },
+  firme: { rigidez: 70, freno: 4.5, ganancia: 2.4, max: 12, tiron: 0.4, retraso: 0, aplastar: 0 },
+};
+const ESTILO_PECHO = ESTILOS_PECHO[new URLSearchParams(location.search).get('pecho')] || ESTILOS_PECHO.gelatina;
 
 const lienzo = document.getElementById('lienzo');
 const ctx = lienzo.getContext('2d');
@@ -206,10 +213,9 @@ function moverCuerpo(p, dt) {
   // el pecho persigue al torso con un muelle blando: se queda atrás en los
   // movimientos bruscos y luego oscila un poco hasta asentarse
   const q = anim.pecho;
-  const objY = c.y * 0.5 - p.respira * 1.5 + (p.y - c.y) * 0.4, objX = c.x * 0.5;
-  // gelatina: muelle algo más blando y con menos freno, así tiembla un poco más
-  const [rigidez, freno] = PECHO_GELATINA ? [55, 2.4] : [70, 4.5];
-  q.vy += ((objY - q.y) * rigidez - q.vy * freno) * dt;
+  const e = ESTILO_PECHO;
+  const objY = c.y * 0.5 - p.respira * 1.5 + (p.y - c.y) * e.tiron, objX = c.x * 0.5;
+  q.vy += ((objY - q.y) * e.rigidez - q.vy * e.freno) * dt;
   q.y += q.vy * dt;
   q.vx += ((objX - q.x) * 60 - q.vx * 6) * dt;
   q.x += q.vx * dt;
@@ -284,16 +290,17 @@ function dibujarCuerpo(p) {
   franjasCuerpo(capas.cuerpo, p);
   // el pecho rebota respecto al torso: diferencia entre su muelle y el del torso
   const c = anim.cuerpo, q = anim.pecho;
-  const rebY = limitar((q.y - (q.objY ?? q.y)) * 2.4, -12, 12);
+  const e = ESTILO_PECHO;
+  const rebY = limitar((q.y - (q.objY ?? q.y)) * e.ganancia, -e.max, e.max);
   const rebX = limitar((q.x - c.x * 0.5) * 1.5, -6, 6);
   anim.rebote = { x: rebX, y: rebY };
   historialRebote.push({ t, x: rebX, y: rebY });
-  while (historialRebote.length > 2 && historialRebote[0].t < t - 0.4) historialRebote.shift();
+  while (historialRebote.length > 2 && historialRebote[0].t < t - 0.5) historialRebote.shift();
 
   const arriba = PECHO.arriba, abajo = PECHO.abajo;
   franjasCuerpo(capas.pecho, p, (m) => {
     if (m < arriba - 4 || m > abajo + 4) return null;
-    if (!PECHO_GELATINA) {
+    if (!e.retraso) {
       // firme: arriba, donde se une al torso, no se mueve; el rebote crece hasta la mitad
       const k = suave(arriba, (arriba + abajo) / 2, m);
       return { dx: rebX * k, dy: rebY * k, sx: 1 };
@@ -301,8 +308,8 @@ function dibujarCuerpo(p) {
     // gelatina: cuanto más abajo, más se mueve y con más retraso; al estirarse
     // se estrecha un poco y al encogerse se ensancha
     const k = suave(arriba, abajo, m);
-    const r = reboteHace(k * 0.09);
-    return { dx: r.x * k, dy: r.y * k * 1.15, sx: 1 - r.y * k * 0.004 };
+    const r = reboteHace(k * e.retraso);
+    return { dx: r.x * k, dy: r.y * k * 1.15, sx: 1 - r.y * k * e.aplastar };
   });
 }
 
