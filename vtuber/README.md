@@ -46,11 +46,25 @@ Sirve cualquier programa con API compatible con OpenAI. Lo más fácil es
 **Ollama** (https://ollama.com):
 
 ```bash
-ollama pull qwen2.5:7b      # buen español; con poca GPU prueba qwen2.5:3b
+ollama pull gemma4:12b      # ve imágenes y usa herramientas; con poca GPU: qwen2.5:3b
 ```
 
 Ollama escucha en `http://localhost:11434/v1`, que ya es el valor por defecto
-en `config.json`. Si usas otro programa, cambia `cerebro.url` y `cerebro.modelo`:
+en `config.json`. Con Ollama se usa su API propia, que permite:
+
+- **Apagar el modo "pensar"** (`cerebro.pensar: false`): gemma4 y qwen3 piensan
+  en inglés antes de contestar y tardan mucho; para una VTuber, mejor apagado.
+- **Ver imágenes:** en el panel, botón *Imagen* (o Ctrl+V en el chat), y
+  *Compartir pantalla*: mientras compartes una pantalla o ventana, cada mensaje
+  lleva una captura; *¿Qué ves?* le pide que la comente. Por la API:
+  `"imagenes": ["data:image/jpeg;base64,..."]` en `/api/chat`.
+- **Buscar en internet** (`cerebro.internet: true`): el modelo decide cuándo
+  buscar (DuckDuckGo, y Wikipedia si falla) y leer una página. En el panel se
+  ve "Buscando en internet: …".
+- `cerebro.contexto` (tokens de memoria, 8192) y `cerebro.mantener_cargado`
+  ("24h", para no esperar a que se cargue en cada mensaje).
+
+Si usas otro programa, cambia `cerebro.url` y `cerebro.modelo`: Si usas otro programa, cambia `cerebro.url` y `cerebro.modelo`:
 
 | Programa | URL típica |
 |---|---|
@@ -61,7 +75,7 @@ en `config.json`. Si usas otro programa, cambia `cerebro.url` y `cerebro.modelo`
 
 ### La voz
 
-Por defecto usa `es-ES-ElviraNeural`, una voz femenina de España. Para ver
+Por defecto usa `es-ES-XimenaNeural`, una voz femenina de España. Para ver
 todas las voces femeninas en español:
 
 ```bash

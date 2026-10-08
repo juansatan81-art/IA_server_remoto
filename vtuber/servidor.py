@@ -4,7 +4,8 @@
                                        http://127.0.0.1:8765/panel   (control)
 
 API HTTP (para que cualquier programa o IA controle el avatar):
-    POST /api/chat      {"mensaje": "...", "usuario": "opcional"}   la IA responde y habla
+    POST /api/chat      {"mensaje": "...", "usuario": "opcional", "imagenes": ["data:image/jpeg;base64,..."]}
+                        la IA responde y habla (las imágenes son opcionales: fotos, capturas...)
     POST /api/decir     {"texto": "[feliz] Hola", "emocion": "opcional"}  habla sin IA
     POST /api/emocion   {"nombre": "feliz", "duracion": 0}          0 = hasta que cambie
     POST /api/cabeza    {"x": 0, "y": 0, "inclinacion": 0}          postura de la cabeza
@@ -72,12 +73,20 @@ class VTuber:
                 await self.registrar("error", f"No se pudo generar la voz: {err}")
             await self.al_avatar(mensaje)
 
-    async def chat(self, mensaje, usuario=None):
+    async def chat(self, mensaje, usuario=None, imagenes=None):
         async with self.turno:
-            await self.registrar("usuario", f"{usuario}: {mensaje}" if usuario else mensaje)
+            texto = f"{usuario}: {mensaje}" if usuario else mensaje
+            if imagenes:
+                texto += f"  [{len(imagenes)} imagen{'es' if len(imagenes) > 1 else ''}]"
+            await self.registrar("usuario", texto)
             await self.al_avatar({"tipo": "emocion", "nombre": "pensativa", "duracion": 30})
+
+            async def aviso(que):
+                await self.registrar("sistema", que)
+                await self.al_avatar({"tipo": "emocion", "nombre": "pensativa", "duracion": 30})
+
             try:
-                respuesta = await self.cerebro.responder(mensaje, usuario)
+                respuesta = await self.cerebro.responder(mensaje, usuario, imagenes, aviso)
             except Exception as err:
                 await self.al_avatar({"tipo": "emocion", "nombre": "neutral"})
                 await self.registrar("error", f"El cerebro no responde: {err}")
@@ -89,7 +98,7 @@ class VTuber:
 
 # -------------------------------------------------------------------- rutas
 def crear_app(vt: VTuber):
-    app = web.Application()
+    app = web.Application(client_max_size=32 * 1024 * 1024)   # caben fotos y capturas
     rutas = web.RouteTableDef()
 
     async def json_de(req):
@@ -138,7 +147,8 @@ def crear_app(vt: VTuber):
         return web.json_response({
             "emociones": EMOCIONES,
             "avatares_conectados": len(vt.avatares),
-            "cerebro": {"url": c.url, "modelo": c.modelo, "mensajes_en_memoria": len(c.historial)},
+            "cerebro": {"url": c.url, "modelo": c.modelo, "mensajes_en_memoria": len(c.historial),
+                        "internet": c.internet},
             "voz": vt.voz.voz,
         })
 
@@ -146,10 +156,15 @@ def crear_app(vt: VTuber):
     async def chat(req):
         datos = await json_de(req)
         mensaje = str(datos.get("mensaje", "")).strip()
+        imagenes = datos.get("imagenes") or []
+        if not isinstance(imagenes, list) or not all(isinstance(i, str) for i in imagenes):
+            raise web.HTTPBadRequest(text="'imagenes' debe ser una lista de textos base64")
+        if not mensaje and imagenes:
+            mensaje = "Mira esto."
         if not mensaje:
             raise web.HTTPBadRequest(text="Falta 'mensaje'")
         try:
-            respuesta = await vt.chat(mensaje, datos.get("usuario"))
+            respuesta = await vt.chat(mensaje, datos.get("usuario"), imagenes)
         except Exception as err:
             return web.json_response({"error": str(err)}, status=502)
         return web.json_response({"respuesta": respuesta})

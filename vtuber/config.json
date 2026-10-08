@@ -9,11 +9,15 @@
   },
   "cerebro": {
     "url": "http://localhost:11434/v1",
-    "modelo": "qwen2.5:7b",
+    "modelo": "gemma4:12b",
     "api_key": "local",
     "temperatura": 0.8,
     "max_tokens": 300,
-    "historial": 20
+    "historial": 20,
+    "contexto": 8192,
+    "pensar": false,
+    "internet": true,
+    "mantener_cargado": "24h"
   },
   "voz": {
     "voz": "es-ES-XimenaNeural",

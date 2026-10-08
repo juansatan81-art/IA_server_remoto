@@ -32,6 +32,14 @@
   #emocionActual { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--acento); color: var(--tarjeta); }
   #diciendo { color: var(--suave); }
   code { font-size: 13px; }
+  #adjuntos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  #adjuntos:empty { display: none; }
+  .adjunto { position: relative; }
+  .adjunto img { height: 64px; border-radius: 8px; border: 1px solid var(--borde); display: block; }
+  .adjunto button { position: absolute; top: 2px; right: 2px; padding: 0 6px; font-size: 12px; line-height: 18px; }
+  #pantalla { width: 100%; border-radius: 10px; margin-top: 8px; display: none; background: #000; }
+  #pantalla.activa { display: block; }
+  .nota { font-size: 13px; color: var(--suave); margin: 4px 0 0; }
 </style>
 </head>
 <body>
@@ -47,8 +55,11 @@
       <div id="registro"></div>
       <form id="formChat">
         <input id="chat" type="text" placeholder="Escríbele algo a la IA…" autocomplete="off">
+        <button type="button" id="adjuntar" title="Adjuntar imagen">Imagen</button>
+        <input type="file" id="archivo" accept="image/*" multiple hidden>
         <button class="principal" id="enviarChat">Enviar</button>
       </form>
+      <div id="adjuntos"></div>
       <form id="formDecir">
         <input id="decir" type="text" placeholder="Que diga exactamente esto (admite [feliz], [triste]…)" autocomplete="off">
         <button id="enviarDecir">Decir</button>
@@ -68,6 +79,16 @@
       </label>
       <p style="font-size:13px;color:var(--suave);margin:4px 0 0">Si la tienes abierta también en OBS u otra pestaña, desmárcalo para que no se oiga con eco.</p>
       <p id="nota" style="font-size:13px;color:var(--suave);margin:8px 0 0">En OBS añade una <b>fuente de navegador</b> con <code>/avatar</code>. Si no oyes nada aquí, haz clic sobre la vista previa.</p>
+    </section>
+    <section>
+      <h2>Lo que ve la IA</h2>
+      <div class="fila" style="margin-top:0">
+        <button id="compartir">Compartir pantalla</button>
+        <button id="comentar" disabled>¿Qué ves?</button>
+      </div>
+      <video id="pantalla" muted playsinline></video>
+      <p class="nota">Mientras compartes la pantalla (o una ventana, como un juego), cada mensaje
+        que le escribas lleva una captura. También puedes adjuntar fotos o pegarlas con Ctrl+V.</p>
     </section>
     <section>
       <h2>Emociones</h2>
