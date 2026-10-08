@@ -217,6 +217,14 @@ def alargar_cuello(g, a, alto=85):
     return g, a
 
 
+# Hasta qué altura (en px por encima de las puntas del pelo de la cabeza) se ve
+# el pelo largo por los lados. Más grande = el pelo largo empieza más arriba.
+CORTE_PELO_LARGO = 60
+# Cuánto pelo largo se quita alrededor del pelo de la cabeza (px de diámetro).
+# Más pequeño = asoma más pelo largo junto a la cabeza.
+MARGEN_PELO_LARGO = 81
+
+
 def montar(t):
     DESTINO.mkdir(parents=True, exist_ok=True)
     T = {k: (v["escala"], v["dx"], v["dy"]) for k, v in t.items()}
@@ -250,10 +258,11 @@ def montar(t):
                            al.componer(T["pelo_cabeza_editado"], busto_a_lienzo), (LW, LH))
     # el pelo largo de la maestra es algo más ancho que el de la cabeza: alrededor
     # de la cabeza se quita para que no salga un contorno doble
-    tapado = cv2.dilate((ha > 0.5).astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (81, 81))) > 0
+    tapado = cv2.dilate((ha > 0.5).astype(np.uint8),
+                        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MARGEN_PELO_LARGO, MARGEN_PELO_LARGO))) > 0
     filas = np.flatnonzero((ha > 0.5).any(1))
     tapado[filas.max() - 60:] = False
-    tapado[:filas.max() - 60] = True     # por encima de las puntas manda el pelo de la cabeza
+    tapado[:filas.max() - CORTE_PELO_LARGO] = True     # más arriba manda el pelo de la cabeza
     la = np.where(tapado, 0, la)
     guardar("pelo_largo", lg, la)
     cg, ca = alargar_cuello(*al_lienzo(cg, ca))
