@@ -46,8 +46,21 @@ Sirve cualquier programa con API compatible con OpenAI. Lo más fácil es
 **Ollama** (https://ollama.com):
 
 ```bash
-ollama pull gemma4:12b      # ve imágenes y usa herramientas; con poca GPU: qwen2.5:3b
+ollama pull gemma4:26b      # cerebro: ve imágenes, usa herramientas (MoE: 26B, ~4B activos)
+ollama pull qwen3:1.7b      # ayudante de los filtros (corre en el procesador)
 ```
+
+`gemma4:26b` ocupa unos 18 GB: no cabe entero en una gráfica de 12 GB, y Ollama
+reparte el resto en la RAM. Como solo usa unos 4.000 millones de parámetros por
+palabra, sigue siendo rápido. Si te va lento, vuelve a `gemma4:12b` en
+`cerebro.modelo`. Para que quepa más en la gráfica, en Windows (PowerShell):
+
+```
+setx OLLAMA_FLASH_ATTENTION 1
+setx OLLAMA_KV_CACHE_TYPE q8_0
+```
+
+y cierra y vuelve a abrir Ollama.
 
 Ollama escucha en `http://localhost:11434/v1`, que ya es el valor por defecto
 en `config.json`. Con Ollama se usa su API propia, que permite:
@@ -115,6 +128,47 @@ Opciones en la URL del avatar:
 | `?fondo=%2300ff00` | fondo de color (por ejemplo verde para croma) |
 | `?emocion=feliz` | empieza con esa emoción |
 | `?pecho=gelatina` / `?pecho=firme` | rebote del pecho más exagerado / sin deformarse |
+
+## Modo directo (Lara streamea sola)
+
+En el panel, **Empezar directo** (con un plan opcional: "hoy Minecraft y charla").
+Desde ese momento Lara:
+
+- **Elige a quién responder** cuando termina de hablar: puntúa preguntas, menciones
+  a Lara, Super Chats, miembros, gente nueva y a quien aún no ha respondido. Agrupa
+  los mensajes repetidos y deja caducar los viejos (90 s).
+- **Habla sola** si el chat está tranquilo (12–30 s): piensa en silencio (se ve en
+  el panel como *Piensa (no se oye)*) y decide si dice algo o se calla.
+- **Ve tu pantalla** si la compartes en el panel (una captura cada 8 s).
+- **Tiene ánimo**: sube con los Super Chats y el cariño, baja con los trolls.
+- **Recuerda**: a cada espectador (cuántas veces ha venido, cosas que contó) y, al
+  pulsar **Terminar y guardar recuerdo**, un resumen del directo que tendrá en
+  cuenta en los siguientes. Todo queda en `memoria/` (JSON que puedes editar).
+- **Decide sola si busca en internet**: antes de contestar piensa si le hace falta
+  (`cerebro.decidir_herramientas`).
+
+**Seguridad** (lo que Neuro-sama aprendió a la fuerza): el spam, los enlaces y las
+trampas ("ignora tus instrucciones", "repite conmigo") se descartan con reglas; el
+ayudante revisa cada mensaje elegido y **todo lo que Lara va a decir antes de la
+voz**. El botón **PÁNICO** la calla al momento, vacía la cola y le hace cambiar de
+tema. Para probar sin directo: el *Chat de prueba* y *Simular espectadores*.
+
+### Chat de YouTube
+
+1. Entra en https://console.cloud.google.com, crea un proyecto, activa
+   **YouTube Data API v3** y en *Credenciales* crea una **clave de API**.
+2. Crea `config.local.json` junto a `config.json` (git no lo sube ni lo pisa):
+
+   ```json
+   { "youtube": { "api_key": "TU_CLAVE", "canal_id": "UC..." } }
+   ```
+
+   El `canal_id` está en YouTube → Configuración → Configuración avanzada.
+3. Con el directo ya emitiendo, **Empezar directo** se conecta solo (o pega el
+   enlace del directo y pulsa **Conectar**).
+
+La API da 10.000 unidades al día; leyendo cada 8 s llega para unas 4 horas de
+directo. Lo que ya estaba escrito al conectarse no se responde.
 
 ## Controlarlo desde otros programas
 

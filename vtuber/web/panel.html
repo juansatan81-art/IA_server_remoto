@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Panel VTuber</title>
 <style>
-  :root { --fondo: #f4f4f5; --tarjeta: #fff; --texto: #18181b; --suave: #71717a; --borde: #e4e4e7; --acento: #18181b; --error: #b91c1c; }
+  :root { --fondo: #f4f4f5; --tarjeta: #fff; --texto: #18181b; --suave: #71717a; --borde: #e4e4e7; --acento: #18181b; --error: #b91c1c; --aviso: #b45309; --ok: #15803d; }
   @media (prefers-color-scheme: dark) {
-    :root { --fondo: #111113; --tarjeta: #1c1c1f; --texto: #f4f4f5; --suave: #a1a1aa; --borde: #2e2e33; --acento: #f4f4f5; --error: #f87171; }
+    :root { --fondo: #111113; --tarjeta: #1c1c1f; --texto: #f4f4f5; --suave: #a1a1aa; --borde: #2e2e33; --acento: #f4f4f5; --error: #f87171; --aviso: #fbbf24; --ok: #4ade80; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.45 system-ui, sans-serif; }
@@ -40,6 +40,16 @@
   #pantalla { width: 100%; border-radius: 10px; margin-top: 8px; display: none; background: #000; }
   #pantalla.activa { display: block; }
   .nota { font-size: 13px; color: var(--suave); margin: 4px 0 0; }
+  .linea.pensamiento { font-style: italic; color: var(--suave); border-left: 3px solid var(--borde); }
+  .linea.filtro { color: var(--aviso); }
+  textarea, select { width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--borde);
+    background: var(--fondo); color: var(--texto); font: inherit; }
+  textarea { resize: vertical; min-height: 54px; }
+  select { width: auto; }
+  button.panico { background: var(--error); border-color: var(--error); color: #fff; font-weight: 700; }
+  #estadoDirecto { font-size: 13px; color: var(--suave); margin-top: 8px; }
+  #estadoDirecto b { color: var(--texto); }
+  .encendido { color: var(--ok) !important; }
 </style>
 </head>
 <body>
@@ -49,6 +59,33 @@
       <h1>Panel del VTuber</h1>
       <div id="estado">Conectando…</div>
       <div id="ahora">Emoción: <b id="emocionActual">neutral</b> <span id="diciendo"></span></div>
+    </section>
+    <section>
+      <h2>Modo directo</h2>
+      <textarea id="plan" placeholder="Plan del directo (opcional): hoy jugamos a Minecraft, construimos una casa y hablamos de agujeros negros…"></textarea>
+      <div class="fila">
+        <button class="principal" id="iniciarDirecto">Empezar directo</button>
+        <button id="terminarDirecto" disabled>Terminar y guardar recuerdo</button>
+        <button class="panico" id="panico" title="Calla al momento, vacía la cola y cambia de tema">PÁNICO</button>
+      </div>
+      <div id="estadoDirecto">Apagado. Con el directo encendido, Lara elige a quién responder del chat y habla sola cuando el chat está tranquilo.</div>
+      <h2 style="margin-top:14px">Chat de prueba</h2>
+      <form id="formSimular">
+        <input id="simAutor" type="text" placeholder="Nombre" style="flex:0 0 120px" autocomplete="off">
+        <input id="simTexto" type="text" placeholder="Mensaje como si fueras del chat" autocomplete="off">
+        <select id="simTipo"><option value="mensaje">Mensaje</option><option value="superchat">Super Chat</option><option value="miembro">Nuevo miembro</option></select>
+        <button id="enviarSimular">Al chat</button>
+      </form>
+      <div class="fila">
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="bots"> Simular espectadores (mensajes automáticos para probar)</label>
+      </div>
+      <h2 style="margin-top:14px">YouTube</h2>
+      <form id="formYoutube">
+        <input id="ytVideo" type="text" placeholder="Enlace del directo (vacío = el que emita tu canal)" autocomplete="off">
+        <button id="ytConectar">Conectar</button>
+        <button type="button" id="ytDesconectar">Desconectar</button>
+      </form>
+      <p class="nota" id="ytEstado">Necesita la clave de la API en <code>config.local.json</code> (mira el README).</p>
     </section>
     <section>
       <h2>Conversación con la IA</h2>

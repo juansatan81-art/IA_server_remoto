@@ -9,7 +9,7 @@
   },
   "cerebro": {
     "url": "http://localhost:11434/v1",
-    "modelo": "gemma4:12b",
+    "modelo": "gemma4:26b",
     "api_key": "local",
     "temperatura": 0.8,
     "max_tokens": 300,
@@ -17,7 +17,25 @@
     "contexto": 8192,
     "pensar": false,
     "internet": true,
-    "mantener_cargado": "24h"
+    "mantener_cargado": "24h",
+    "decidir_herramientas": true
+  },
+  "ayudante": {
+    "modelo": "qwen3:1.7b",
+    "en_procesador": true,
+    "filtro_entrada": true,
+    "filtro_salida": true
+  },
+  "directo": {
+    "silencio_min": 12,
+    "silencio_max": 30,
+    "caducidad_mensajes": 90,
+    "ver_en_respuestas": true
+  },
+  "youtube": {
+    "api_key": "",
+    "canal_id": "",
+    "intervalo": 8
   },
   "voz": {
     "voz": "es-ES-XimenaNeural",

@@ -15,7 +15,8 @@ async function api(ruta, datos = {}) {
   return json;
 }
 
-const NOMBRES = { usuario: 'Tú', ia: 'IA', error: 'Error', sistema: 'Sistema' };
+const NOMBRES = { usuario: 'Chat / tú', ia: 'IA', error: 'Error', sistema: 'Sistema',
+  pensamiento: 'Piensa (no se oye)', filtro: 'Filtro' };
 function anotar(quien, texto) {
   const div = document.createElement('div');
   div.className = `linea ${quien}`;
@@ -166,7 +167,10 @@ async function cargarEstado() {
   try {
     const e = await (await fetch('/api/estado')).json();
     $('estado').textContent =
-      `Cerebro: ${e.cerebro.modelo} (${e.cerebro.url})${e.cerebro.internet ? ' · con internet' : ''} · Voz: ${e.voz} · Avatares conectados: ${e.avatares_conectados}`;
+      `Cerebro: ${e.cerebro.modelo} (${e.cerebro.url})${e.cerebro.internet ? ' · con internet' : ''}`
+      + ` · Filtros: ${e.ayudante ? `reglas + ${e.ayudante}` : 'solo reglas'}`
+      + ` · Voz: ${e.voz} · Avatares conectados: ${e.avatares_conectados}`;
+    pintarDirecto(e.directo, e.youtube);
     if (!$('emociones').children.length) {
       for (const nombre of e.emociones) {
         const b = document.createElement('button');
@@ -206,5 +210,83 @@ function aplicarSonido() {
 casilla.addEventListener('change', aplicarSonido);
 $('vista').addEventListener('load', () => setTimeout(aplicarSonido, 500));
 
+// ------------------------------------------------------------ modo directo
+let directoActivo = false;
+
+function pintarDirecto(d, yt) {
+  directoActivo = d.activo;
+  $('iniciarDirecto').disabled = d.activo;
+  $('terminarDirecto').disabled = !d.activo;
+  const el = $('estadoDirecto');
+  if (d.activo) {
+    el.innerHTML = '';
+    const b = document.createElement('b');
+    b.className = 'encendido';
+    b.textContent = `● En directo (${d.minutos} min)`;
+    el.append(b, ` · En cola: ${d.en_cola} · Ignorados por el filtro: ${d.ignorados} · ${d.animo}`
+      + (d.viendo_pantalla ? ' · Viendo tu pantalla' : ''));
+  } else {
+    el.textContent = 'Apagado. Con el directo encendido, Lara elige a quién responder del chat y habla sola cuando el chat está tranquilo.';
+  }
+  $('ytEstado').textContent = yt.configurado ? `YouTube: ${yt.estado}`
+    : 'YouTube: falta la clave de la API en config.local.json (mira el README).';
+}
+
+$('iniciarDirecto').onclick = async () => {
+  try {
+    await api('directo/iniciar', { plan: $('plan').value, video: $('ytVideo').value });
+    cargarEstado();
+  } catch (err) { anotar('error', err.message); }
+};
+$('terminarDirecto').onclick = async () => {
+  $('terminarDirecto').disabled = true;
+  $('bots').checked = false;
+  try { await api('directo/terminar'); } catch (err) { anotar('error', err.message); }
+  cargarEstado();
+};
+$('panico').onclick = () => api('directo/panico').catch((e) => anotar('error', e.message));
+
+formulario('formSimular', 'simTexto', 'enviarSimular', async (texto) => {
+  const tipo = $('simTipo').value;
+  await api('directo/chat', {
+    autor: $('simAutor').value.trim() || 'Espectador', texto, tipo,
+    cantidad: tipo === 'superchat' ? '5,00 €' : '',
+  });
+});
+
+$('formYoutube').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try { await api('youtube/conectar', { video: $('ytVideo').value }); } catch (err) { anotar('error', err.message); }
+  cargarEstado();
+});
+$('ytDesconectar').onclick = async () => {
+  try { await api('youtube/desconectar'); } catch (err) { anotar('error', err.message); }
+  cargarEstado();
+};
+
+// espectadores de mentira para probar cómo elige a quién responder
+const BOTS = ['Pablo', 'Marta_gamer', 'xXDarkXx', 'Lucía', 'Andrés', 'NoobMaster', 'Sofi', 'Kevin2009'];
+const FRASES = ['hola Lara!!', '¿Qué juego vas a jugar hoy?', 'jajaja', 'Lara, ¿cuál es tu comida favorita?',
+  'primera vez que vengo, saludos desde México', 'me encanta tu voz', 'xd', '¿Sabes qué es un agujero negro?',
+  'Lara ¿te gusta Minecraft?', 'buenas noches a todos', 'qué guapa estás hoy', '¿Cuántos años tienes?',
+  'hoy tengo examen de mates 😭', 'saludos!!', '¿Lara puedes cantar algo?', 'gg'];
+setInterval(() => {
+  if (!$('bots').checked || !directoActivo) return;
+  const n = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) {
+    api('directo/chat', {
+      autor: BOTS[Math.floor(Math.random() * BOTS.length)],
+      texto: FRASES[Math.floor(Math.random() * FRASES.length)],
+    }).catch(() => {});
+  }
+}, 6000);
+
+// con el directo encendido y la pantalla compartida, Lara ve una captura cada 8 s
+setInterval(() => {
+  if (!directoActivo) return;
+  const captura = capturaPantalla();
+  if (captura) api('directo/vista', { imagen: captura }).catch(() => {});
+}, 8000);
+
 conectar();
-setInterval(cargarEstado, 5000);
+setInterval(cargarEstado, 3000);
