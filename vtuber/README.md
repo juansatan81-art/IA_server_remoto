@@ -65,8 +65,10 @@ y cierra y vuelve a abrir Ollama.
 Ollama escucha en `http://localhost:11434/v1`, que ya es el valor por defecto
 en `config.json`. Con Ollama se usa su API propia, que permite:
 
-- **Apagar el modo "pensar"** (`cerebro.pensar: false`): gemma4 y qwen3 piensan
-  en inglés antes de contestar y tardan mucho; para una VTuber, mejor apagado.
+- **Modo "pensar" automático** (`cerebro.pensar: "auto"`): antes de contestar decide si la
+  pregunta lo necesita (cálculos, lógica, explicaciones precisas); si piensa, dice "déjame
+  pensarlo" para que no haya silencio. `false` = nunca (más rápida), `true` = siempre. Pensar
+  siempre tarda unos segundos más en cada frase.
 - **Ver imágenes:** en el panel, botón *Imagen* (o Ctrl+V en el chat), y
   *Compartir pantalla*: mientras compartes una pantalla o ventana, cada mensaje
   lleva una captura; *¿Qué ves?* le pide que la comente. Por la API:

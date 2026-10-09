@@ -15,10 +15,11 @@
     "max_tokens": 300,
     "historial": 20,
     "contexto": 8192,
-    "pensar": false,
+    "pensar": "auto",
     "internet": true,
     "mantener_cargado": "24h",
-    "decidir_herramientas": true
+    "decidir_herramientas": true,
+    "max_tokens_pensando": 1500
   },
   "ayudante": {
     "modelo": "qwen3:1.7b",

@@ -44,16 +44,22 @@ EXTRA_INTERNET = """- Puedes buscar en internet. Hazlo siempre que te pregunten 
 EXTRA_VISTA = """- A veces te enseñarán una imagen o lo que se ve en la pantalla (un juego, una web...).
   Míralo de verdad y coméntalo con naturalidad, como si lo estuvieras viendo en directo."""
 
-# Antes de contestar, el modelo decide si le hace falta buscar (piensa en voz baja, en JSON)
-DECIDIR = """(Nota para ti: antes de contestar al último mensaje, decide si necesitas buscar en
-internet para responder bien. Busca si pide datos concretos que podrías no saber o tener
-desactualizados: noticias, fechas, cifras, precios, resultados, lanzamientos, el tiempo,
-personas o empresas reales, o si te piden comprobar algo. NO busques para saludos, charla,
-opiniones, sentimientos, lo que se ve en una imagen, o cosas sobre ti o sobre el directo.
+# Antes de contestar, el modelo decide si le hace falta buscar y si debe pensar a fondo
+# (lo decide en voz baja, en JSON: es rápido porque reaprovecha lo ya leído)
+DECIDIR = """(Nota para ti: antes de contestar al último mensaje, decide dos cosas.
+1. "buscar": si necesitas buscar en internet para responder bien. Busca si pide datos
+concretos que podrías no saber o tener desactualizados: noticias, fechas, cifras, precios,
+resultados, lanzamientos, el tiempo, personas o empresas reales, o si te piden comprobar algo.
+NO busques para saludos, charla, opiniones, sentimientos, lo que se ve en una imagen, o cosas
+sobre ti o sobre el directo.
+2. "pensar": si la respuesta necesita razonar con calma antes de hablar: cálculos, problemas
+de lógica, acertijos, explicar algo científico con precisión, comparar opciones, consejos
+delicados. Para charla normal, saludos, bromas o reacciones, NO hace falta pensar.
 Responde solo con el JSON pedido.)"""
 ESQUEMA_DECIDIR = {"type": "object", "properties": {
-    "motivo": {"type": "string"}, "buscar": {"type": "boolean"}, "consulta": {"type": "string"}},
-    "required": ["motivo", "buscar", "consulta"]}
+    "motivo": {"type": "string"}, "buscar": {"type": "boolean"}, "consulta": {"type": "string"},
+    "pensar": {"type": "boolean"}},
+    "required": ["motivo", "buscar", "consulta", "pensar"]}
 
 # Cuando nadie le habla: piensa en silencio y decide si dice algo
 ESPONTANEO = """(Nota para ti: ahora mismo nadie te está hablando. Eres una streamer en directo:
@@ -123,7 +129,10 @@ class Cerebro:
         self.max_historial = cfg.get("historial", 20)
         self.contexto = cfg.get("contexto", 8192)
         self.mantener = cfg.get("mantener_cargado", "24h")
-        self.pensar = cfg.get("pensar", False)
+        # False: nunca piensa (más rápida) · True: siempre · "auto": solo cuando hace falta
+        self.pensar = cfg.get("pensar", "auto")
+        self.max_pensando = cfg.get("max_tokens_pensando", 1500)
+        self._pensar_ahora = False
         self.internet = bool(cfg.get("internet", True))
         self.decidir = bool(cfg.get("decidir_herramientas", True))
         # "ollama" (API propia) u "openai"; por defecto se deduce de la dirección
@@ -171,10 +180,16 @@ class Cerebro:
         imagenes = [_base64(i) for i in (imagenes or [])]
         mensajes = self._mensajes(contenido, imagenes, nota)
 
-        herramientas = self.internet
-        if self.internet and self.decidir:
-            mensajes, herramientas = await self._decidir_busqueda(mensajes, aviso)
-        respuesta = await self._conversar(mensajes, aviso, herramientas)
+        herramientas, pensar = self.internet, False
+        if self.decidir and (self.internet or self.pensar == "auto"):
+            mensajes, herramientas, pensar = await self._decidir(mensajes, aviso)
+        if pensar and self.pensar == "auto" and aviso:
+            await aviso("Pensando a fondo…")
+        self._pensar_ahora = pensar
+        try:
+            respuesta = await self._conversar(mensajes, aviso, herramientas)
+        finally:
+            self._pensar_ahora = False
         # si se ha colado otro idioma, se le pide una vez que lo repita en español
         if _OTRO_ALFABETO.search(respuesta):
             respuesta = await self._conversar(
@@ -184,26 +199,28 @@ class Cerebro:
         self._recordar(contenido, respuesta, imagenes)
         return respuesta
 
-    async def _decidir_busqueda(self, mensajes, aviso):
-        """Paso de "pensar antes de usar herramientas": el modelo decide si busca.
+    async def _decidir(self, mensajes, aviso):
+        """Paso de "pensar antes de actuar": el modelo decide si busca y si piensa a fondo.
 
         Si busca, la búsqueda y sus resultados se añaden a la conversación y luego puede seguir
         usando herramientas (leer una página). Si no, contesta directamente, sin herramientas.
+        Devuelve (mensajes, herramientas, pensar).
         """
         try:
             decision = await self.json(mensajes + [{"role": "user", "content": DECIDIR}],
-                                       ESQUEMA_DECIDIR, max_tokens=120)
+                                       ESQUEMA_DECIDIR, max_tokens=150)
         except Exception:
-            return mensajes, True   # si falla la decisión, que decida el modelo por su cuenta
+            return mensajes, self.internet, False   # si falla, que decida el modelo por su cuenta
+        pensar = bool(decision.get("pensar"))
         consulta = str(decision.get("consulta", "")).strip()
-        if not decision.get("buscar") or not consulta:
-            return mensajes, False
+        if not self.internet or not decision.get("buscar") or not consulta:
+            return mensajes, False, pensar
         llamada = {"id": "llamada0", "nombre": "buscar_en_internet", "argumentos": {"consulta": consulta}}
         if aviso:
             await aviso(internet.describir(llamada["nombre"], llamada["argumentos"]))
         resultado = await internet.usar(llamada["nombre"], llamada["argumentos"])
         return mensajes + [{"role": "assistant", "content": "", "llamadas": [llamada]},
-                           {"role": "tool", "content": resultado, **llamada}], True
+                           {"role": "tool", "content": resultado, **llamada}], True, pensar
 
     async def hablar_sola(self, nota="", imagenes=None, extra=""):
         """Momento sin chat. Devuelve (pensamiento, lo que dice o "" si prefiere callar)."""
@@ -223,6 +240,7 @@ class Cerebro:
         if self.api == "ollama":
             cuerpo = self._cuerpo_ollama(mensajes, False)
             cuerpo["format"] = esquema
+            cuerpo["think"] = False
             cuerpo["options"]["num_predict"] = max_tokens
             if temperatura is not None:
                 cuerpo["options"]["temperature"] = temperatura
@@ -318,9 +336,12 @@ class Cerebro:
             if m["role"] == "tool":
                 nuevo["tool_name"] = m["nombre"]
             salida.append(nuevo)
+        # el pensamiento cuenta dentro del límite de palabras: si piensa, se le da más margen
+        pensar = self.pensar is True or (self.pensar == "auto" and self._pensar_ahora)
         cuerpo = {"model": self.modelo, "messages": salida, "stream": False,
-                  "think": self.pensar, "keep_alive": self.mantener,
-                  "options": {"temperature": self.temperatura, "num_predict": self.max_tokens,
+                  "think": pensar, "keep_alive": self.mantener,
+                  "options": {"temperature": self.temperatura,
+                              "num_predict": self.max_tokens + (self.max_pensando if pensar else 0),
                               "num_ctx": self.contexto}}
         if herramientas:
             cuerpo["tools"] = internet.HERRAMIENTAS

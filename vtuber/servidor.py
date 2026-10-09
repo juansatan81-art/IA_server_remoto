@@ -28,6 +28,7 @@ import argparse
 import asyncio
 import json
 import logging
+import random
 import time
 import uuid
 from pathlib import Path
@@ -48,6 +49,10 @@ AUDIO = RAIZ / "audio_cache"
 MEMORIA = RAIZ / "memoria"
 
 log = logging.getLogger("vtuber")
+
+# lo que dice mientras piensa a fondo una respuesta difícil
+RELLENOS = ["[pensativa] Mmm, déjame pensarlo un momento.", "[pensativa] Uy, buena pregunta… a ver.",
+            "[pensativa] Espera, que esta tiene miga.", "[pensativa] Mmm… dame un segundito."]
 
 
 class VTuber:
@@ -146,6 +151,8 @@ class VTuber:
             async def aviso(que):
                 await self.registrar("sistema", que)
                 await self.al_avatar({"tipo": "emocion", "nombre": "pensativa", "duracion": 30})
+                if que.startswith("Pensando"):   # para que no haya un silencio raro mientras piensa
+                    await self.decir(random.choice(RELLENOS))
 
             try:
                 respuesta = await self.cerebro.responder(mensaje, usuario, imagenes, aviso, nota)
