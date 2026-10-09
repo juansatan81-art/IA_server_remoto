@@ -371,9 +371,11 @@ function dibujarCuerpo(p) {
   });
   if (poseBrazos && capas[poseBrazos]) {
     const sube = 11 * onda(0.1), estira = 0.045 * onda(0.14), mece = 5 * onda(0.1, true);
-    franjasCuerpo(capas[poseBrazos], p, (m) => ({
-      dx: mece, dy: sube + (m - 900) * estira, sx: 1 + 0.022 * onda(0.14),
-    }));
+    // el hombro queda pegado al cuerpo; el movimiento crece hacia los codos y las manos
+    franjasCuerpo(capas[poseBrazos], p, (m) => {
+      const k = suave(760, 1060, m);
+      return { dx: mece * k, dy: (sube + (m - 900) * estira) * k, sx: 1 + 0.022 * onda(0.14) * k };
+    });
   }
 }
 
