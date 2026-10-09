@@ -649,7 +649,19 @@ function siguiente() {
   prepararAudio();
   if (contexto && contexto.state === 'suspended') contexto.resume().catch(() => {});
   audio.src = m.audio;
-  audio.play().catch(() => pedirClic());
+  m.inicio = performance.now();
+  audio.play().catch((err) => {
+    if (err.name === 'AbortError') return;   // se cambió de frase antes de empezar: normal
+    pedirClic();
+    avisarAudio(err.name === 'NotAllowedError'
+      ? 'el navegador ha bloqueado el sonido: haz clic en la vista previa del avatar (en OBS, marca "Controlar audio mediante OBS")'
+      : `no se pudo reproducir la voz (${err.name}: ${err.message})`);
+  });
+}
+
+// cuenta al servidor los problemas de sonido (antes se saltaba la frase en silencio)
+function avisarAudio(texto) {
+  if (typeof enviar === 'function') enviar({ tipo: 'aviso_audio', texto });
 }
 
 // cuenta al servidor (y de ahí al panel) qué emoción tiene y qué está diciendo
@@ -663,7 +675,39 @@ function terminar() {
   siguiente();
 }
 audio.addEventListener('ended', terminar);
-audio.addEventListener('error', terminar);
+audio.addEventListener('error', () => {
+  const codigos = { 1: 'cancelado', 2: 'error de red', 3: 'el audio está dañado o vacío', 4: 'formato no soportado o archivo no encontrado' };
+  if (enCurso && enCurso.audio) avisarAudio(`no se pudo reproducir una frase: ${codigos[audio.error && audio.error.code] || 'error desconocido'}`);
+  terminar();
+});
+
+// vigilante: si el sistema de sonido se ha dormido o la frase se ha atascado, se arregla
+let ultimoTiempo = -1, atascadoDesde = 0;
+setInterval(() => {
+  if (contexto && contexto.state === 'suspended' && enCurso && enCurso.audio) {
+    contexto.resume().catch(() => {});
+    avisarAudio('el sonido del navegador se había parado; intento reactivarlo (si no se oye, haz clic en la vista previa)');
+  }
+  if (enCurso && enCurso.audio && !audio.paused) {
+    if (audio.currentTime === ultimoTiempo) {
+      if (!atascadoDesde) atascadoDesde = performance.now();
+      if (performance.now() - atascadoDesde > 8000) {
+        avisarAudio('una frase se ha quedado atascada sin sonar; la salto');
+        atascadoDesde = 0;
+        terminar();
+      }
+    } else atascadoDesde = 0;
+    ultimoTiempo = audio.currentTime;
+  } else { atascadoDesde = 0; ultimoTiempo = -1; }
+}, 2000);
+
+// si cambia la salida de audio (auriculares, bluetooth, otra pantalla...), se sigue la nueva
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    if (contexto && contexto.setSinkId) contexto.setSinkId('').catch(() => {});
+    if (contexto && contexto.state === 'suspended') contexto.resume().catch(() => {});
+  });
+}
 
 function parar() {
   cola.length = 0;

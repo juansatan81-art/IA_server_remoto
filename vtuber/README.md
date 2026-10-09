@@ -155,6 +155,28 @@ ayudante revisa cada mensaje elegido y **todo lo que Lara va a decir antes de la
 voz**. El botón **PÁNICO** la calla al momento, vacía la cola y le hace cambiar de
 tema. Para probar sin directo: el *Chat de prueba* y *Simular espectadores*.
 
+### Glosario (memes y palabras de internet)
+
+Lara conoce una lista inicial revisada (brainrot, Tralalero Tralala, Tung Tung Tung
+Sahur, rizz, aura, 67, chamba...). Cuando alguien la menciona, recibe el significado y
+no necesita buscarlo. Si busca en internet qué es algo nuevo, lo apunta como
+**pendiente** en el panel (sección *Glosario*): corriges el significado y lo apruebas
+o lo rechazas. Solo usa los aprobados. Se guarda aparte, en `memoria/glosario.json`.
+
+### Apagar el modelo
+
+El modelo se saca de la gráfica y de la RAM al **cerrar la ventana negra** (o Ctrl+C)
+y también si **cierras el panel y el avatar** (y OBS) durante 2 minutos
+(`cerebro.apagar_sin_pantallas`, en segundos; 0 = nunca). Si el modo directo estaba
+encendido, antes guarda el recuerdo. Además, si nadie le habla en 30 minutos, Ollama
+lo descarga solo (`cerebro.mantener_cargado`).
+
+### Si deja de oírse la voz
+
+El panel muestra ahora el motivo en rojo: un bloqueo temporal del servicio de voz de
+Microsoft (se reintenta solo; `iniciar.bat` actualiza edge-tts al arrancar) o el
+navegador bloqueando el sonido (haz clic en la vista previa del avatar).
+
 ### Chat de YouTube
 
 1. Entra en https://console.cloud.google.com, crea un proyecto, activa

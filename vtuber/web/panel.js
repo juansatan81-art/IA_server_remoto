@@ -190,12 +190,13 @@ function conectar() {
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.tipo === 'registro') anotar(m.quien, m.texto);
+    if (m.tipo === 'glosario') cargarGlosario();
     if (m.tipo === 'estado_avatar') {
       $('emocionActual').textContent = m.emocion;
       $('diciendo').textContent = m.texto ? `— «${m.texto}»` : '';
     }
   };
-  ws.onopen = cargarEstado;
+  ws.onopen = () => { cargarEstado(); cargarGlosario(); };
   ws.onclose = () => { $('estado').textContent = 'Reconectando…'; setTimeout(conectar, 1500); };
 }
 
@@ -287,6 +288,61 @@ setInterval(() => {
   const captura = capturaPantalla();
   if (captura) api('directo/vista', { imagen: captura }).catch(() => {});
 }, 8000);
+
+// ------------------------------------------------------------ glosario
+function boton(texto, accion, clase = '') {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = texto;
+  if (clase) b.className = clase;
+  b.onclick = async () => {
+    b.disabled = true;
+    try { await accion(); await cargarGlosario(); } catch (err) { anotar('error', err.message); b.disabled = false; }
+  };
+  return b;
+}
+
+async function cargarGlosario() {
+  let terminos = [];
+  try { terminos = (await (await fetch('/api/glosario')).json()).terminos; } catch { return; }
+  const pendientes = terminos.filter((t) => t.estado === 'pendiente');
+  const aprobados = terminos.filter((t) => t.estado === 'aprobado');
+  $('pendientes').replaceChildren(...pendientes.map((t) => {
+    const d = document.createElement('div');
+    d.className = 'termino';
+    const titulo = document.createElement('b');
+    titulo.textContent = `${t.termino} (pendiente)`;
+    const fuente = document.createElement('small');
+    fuente.textContent = t.fuente || '';
+    const texto = document.createElement('textarea');
+    texto.value = t.significado;
+    const fila = document.createElement('div');
+    fila.className = 'fila';
+    fila.append(
+      boton('Aprobar', () => api('glosario', { termino: t.termino, significado: texto.value, estado: 'aprobado' }), 'principal'),
+      boton('Rechazar', () => api('glosario', { termino: t.termino, estado: 'rechazado' })),
+    );
+    d.append(titulo, fuente, texto, fila);
+    return d;
+  }));
+  $('resumenAprobados').textContent = `Aprobados (${aprobados.length})`;
+  $('aprobados').replaceChildren(...aprobados.map((t) => {
+    const d = document.createElement('div');
+    d.className = 'aprobado';
+    const span = document.createElement('span');
+    const b = document.createElement('b');
+    b.textContent = t.termino;
+    span.append(b, `: ${t.significado}`);
+    d.append(span, boton('Quitar', () => api('glosario/borrar', { termino: t.termino })));
+    return d;
+  }));
+}
+
+formulario('formTermino', 'nuevoTermino', 'anadirTermino', async (termino) => {
+  await api('glosario', { termino, significado: $('nuevoSignificado').value, estado: 'aprobado' });
+  $('nuevoSignificado').value = '';
+  await cargarGlosario();
+});
 
 conectar();
 setInterval(cargarEstado, 3000);

@@ -23,13 +23,21 @@ Modo directo (Lara streamea sola: elige a quién responder, habla cuando el chat
     POST /api/directo/vista     {"imagen": "data:image/jpeg;base64,..."}   lo que hay en pantalla
     POST /api/youtube/conectar  {"video": "enlace o id (opcional)"}
     POST /api/youtube/desconectar {}
+
+Glosario (palabras y memes que conoce sin buscar; los nuevos esperan tu aprobación):
+    GET  /api/glosario
+    POST /api/glosario          {"termino": "...", "significado": "...", "estado": "aprobado|pendiente|rechazado"}
+    POST /api/glosario/borrar   {"termino": "..."}
 """
 import argparse
 import asyncio
+import atexit
 import json
 import logging
 import random
+import sys
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -39,6 +47,7 @@ import filtros
 from cerebro import Cerebro
 from directo import Directo
 from emociones import EMOCIONES, dividir, normalizar
+from glosario import Glosario
 from memoria import Memoria
 from voz import Voz
 from youtube import YouTube
@@ -62,6 +71,13 @@ class VTuber:
         self.cerebro = Cerebro(cfg.get("cerebro", {}), cfg.get("personaje", {}))
         self.ayudante = filtros.Ayudante(cfg.get("ayudante", {}), self.cerebro.base_ollama)
         self.memoria = Memoria(MEMORIA)
+        self.glosario = Glosario(MEMORIA)
+        self._por_aprender = []       # búsquedas de las que el glosario puede sacar un término
+        self.cerebro.al_buscar = lambda consulta, resultado: self._por_aprender.append((consulta, resultado))
+        self.fallos_voz = 0
+        self._ultimo_aviso = ("", 0)
+        self.sin_pantallas_desde = None   # desde cuándo no hay ni panel ni avatar abiertos
+        self.modelos_descargados = False
         self.cerebro.recuerdos = self.memoria.recuerdos()
         self.voz = Voz(cfg.get("voz", {}), AUDIO)
         self.directo = Directo(self, cfg.get("directo", {}))
@@ -101,6 +117,15 @@ class VTuber:
     def ocupada(self):
         return self.turno.locked() or self.hablando()
 
+    async def aviso_avatar(self, texto):
+        """Problemas de sonido que cuenta el avatar (el mismo aviso, como mucho cada 30 s)."""
+        ahora = time.monotonic()
+        anterior, cuando = self._ultimo_aviso
+        if not texto or (texto == anterior and ahora - cuando < 30):
+            return
+        self._ultimo_aviso = (texto, ahora)
+        await self.registrar("error", f"Avatar: {texto}")
+
     def termino_frase(self, id_frase):
         if self.pendientes.pop(id_frase, None) is not None and not self.pendientes:
             self.fin_habla = time.monotonic()
@@ -115,8 +140,15 @@ class VTuber:
             mensaje = {"tipo": "hablar", "id": uuid.uuid4().hex, "texto": frase, "emocion": emo}
             try:
                 mensaje["audio"] = "/audio/" + await self.voz.sintetizar(frase)
+                self.fallos_voz = 0
             except Exception as err:  # sin voz, el avatar al menos muestra la emoción y el texto
-                await self.registrar("error", f"No se pudo generar la voz: {err}")
+                self.fallos_voz += 1
+                consejo = ""
+                if self.fallos_voz == 3:
+                    consejo = (" — La voz falla seguido: suele ser un bloqueo temporal de Microsoft o "
+                               "una versión vieja de edge-tts. Cierra y vuelve a abrir iniciar.bat (lo "
+                               "actualiza solo) y comprueba tu conexión a internet.")
+                await self.registrar("error", f"No se pudo generar la voz: {err}{consejo}")
             if self.avatares:
                 # margen generoso: unos 15 caracteres por segundo, más la carga del audio
                 self.pendientes[mensaje["id"]] = time.monotonic() + 4 + len(frase) / 10
@@ -154,23 +186,40 @@ class VTuber:
                 if que.startswith("Pensando"):   # para que no haya un silencio raro mientras piensa
                     await self.decir(random.choice(RELLENOS))
 
+            self.modelos_descargados = False
+            nota = " ".join(p for p in (nota, self.glosario.nota(mensaje)) if p)
             try:
                 respuesta = await self.cerebro.responder(mensaje, usuario, imagenes, aviso, nota)
             except Exception as err:
                 await self.al_avatar({"tipo": "emocion", "nombre": "neutral"})
                 await self.registrar("error", f"El cerebro no responde: {err}")
                 raise
-            return await self._revisar_y_decir(respuesta, generacion)
+            dicho = await self._revisar_y_decir(respuesta, generacion)
+        if self._por_aprender:
+            asyncio.create_task(self._aprender_terminos())
+        return dicho
+
+    async def _aprender_terminos(self):
+        """Después de contestar (para no retrasar la respuesta): ¿la búsqueda era un término nuevo?"""
+        while self._por_aprender:
+            consulta, resultado = self._por_aprender.pop(0)
+            async with self.turno:
+                nuevo = await self.glosario.aprender(self.cerebro, consulta, resultado)
+            if nuevo:
+                await self.registrar("sistema", f"Glosario: «{nuevo['termino']}» apuntado; revísalo en el panel")
+                await self._enviar(self.paneles, {"tipo": "glosario"})
 
     async def chat(self, mensaje, usuario=None, imagenes=None):
         """Charla directa desde el panel (tú hablándole). En directo, también sabe el contexto."""
         nota = self.directo._nota() if self.directo.activo else ""
+        self.directo.seguidas_sola = 0
         if self.directo.activo and not imagenes:
             imagenes = self.directo._vista()
         return await self.responder_y_hablar(mensaje, usuario, imagenes, nota)
 
     async def hablar_sola(self, nota, imagenes, extra):
         async with self.turno:
+            self.modelos_descargados = False
             generacion = self.generacion
             pensamiento, dice = await self.cerebro.hablar_sola(nota, imagenes, extra)
             if pensamiento:
@@ -178,6 +227,65 @@ class VTuber:
             if not dice:
                 return ""
             return await self._revisar_y_decir(dice, generacion) or ""
+
+
+    # ---------------------------------------------------------------- apagar los modelos
+    def _modelos(self):
+        if self.cerebro.api != "ollama":
+            return []
+        return [(self.cerebro.base_ollama, m) for m in {self.cerebro.modelo, self.ayudante.modelo} if m]
+
+    def descargar_modelos(self):
+        """Saca los modelos de la memoria de la gráfica y de la RAM (keep_alive = 0).
+
+        Es síncrono a propósito: se llama también al cerrar la ventana, cuando ya no hay bucle.
+        """
+        for base, modelo in self._modelos():
+            datos = json.dumps({"model": modelo, "keep_alive": 0}).encode()
+            peticion = urllib.request.Request(f"{base}/api/generate", data=datos,
+                                              headers={"Content-Type": "application/json"})
+            try:
+                urllib.request.urlopen(peticion, timeout=3).read()
+            except Exception:
+                pass   # Ollama cerrado o el modelo ya no estaba cargado
+        self.modelos_descargados = True
+
+    async def vigilar_pantallas(self, espera):
+        """Si se cierran el panel y el avatar (y OBS), se apaga el modelo pasado `espera` s."""
+        while True:
+            await asyncio.sleep(10)
+            if self.avatares or self.paneles:
+                self.sin_pantallas_desde = None
+                continue
+            if self.sin_pantallas_desde is None:
+                self.sin_pantallas_desde = time.monotonic()
+            if self.modelos_descargados or time.monotonic() - self.sin_pantallas_desde < espera:
+                continue
+            if self.directo.activo:
+                await self.directo.terminar()      # guarda el recuerdo antes de apagar
+            await asyncio.to_thread(self.descargar_modelos)
+            log.info("No queda ninguna pantalla abierta: modelo apagado (se vuelve a cargar al hablar).")
+
+
+def apagar_al_cerrar_ventana(vt):
+    """En Windows, cerrar la ventana negra mata el programa sin avisar a Python: se registra un
+    manejador para que antes descargue el modelo (Windows da unos segundos para ello)."""
+    atexit.register(vt.descargar_modelos)          # Ctrl+C o cierre normal
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    manejador_t = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+
+    def manejar(evento):
+        # 0 Ctrl+C, 1 Ctrl+Break, 2 cerrar ventana, 5 cerrar sesión, 6 apagar el PC
+        if evento in (0, 1, 2, 5, 6) and not vt.modelos_descargados:
+            vt.descargar_modelos()
+        return False   # que Windows siga cerrando como siempre
+
+    vt._manejador_ventana = manejador_t(manejar)   # hay que guardarlo para que no se borre
+    ctypes.windll.kernel32.SetConsoleCtrlHandler(vt._manejador_ventana, True)
 
 
 # -------------------------------------------------------------------- rutas
@@ -223,6 +331,8 @@ def crear_app(vt: VTuber):
                         await vt._enviar(vt.paneles, {**datos, "tipo": "estado_avatar"})
                     elif datos.get("tipo") == "fin_audio":
                         vt.termino_frase(datos.get("id"))
+                    elif datos.get("tipo") == "aviso_audio":   # el navegador no pudo reproducir la voz
+                        await vt.aviso_avatar(str(datos.get("texto", ""))[:300])
         finally:
             grupo.discard(ws)
         return ws
@@ -352,6 +462,26 @@ def crear_app(vt: VTuber):
         await vt.youtube.desconectar()
         return web.json_response({"ok": True})
 
+    @rutas.get("/api/glosario")
+    async def glosario_ver(_):
+        return web.json_response({"terminos": vt.glosario.terminos})
+
+    @rutas.post("/api/glosario")
+    async def glosario_poner(req):
+        d = await json_de(req)
+        try:
+            t = vt.glosario.poner(str(d.get("termino", "")),
+                                  d.get("significado") if isinstance(d.get("significado"), str) else None,
+                                  d.get("estado"), d.get("alias") if isinstance(d.get("alias"), list) else None)
+        except ValueError as err:
+            raise web.HTTPBadRequest(text=str(err))
+        return web.json_response({"ok": True, "termino": t})
+
+    @rutas.post("/api/glosario/borrar")
+    async def glosario_borrar(req):
+        d = await json_de(req)
+        return web.json_response({"ok": vt.glosario.borrar(str(d.get("termino", "")))})
+
     @rutas.post("/api/olvidar")
     async def olvidar(_):
         vt.cerebro.olvidar()
@@ -360,6 +490,9 @@ def crear_app(vt: VTuber):
 
     async def al_arrancar(_):
         vt.directo.arrancar_bucle()
+        espera = vt.cfg.get("cerebro", {}).get("apagar_sin_pantallas", 120)
+        if espera:
+            asyncio.create_task(vt.vigilar_pantallas(espera))
 
     app.on_startup.append(al_arrancar)
     app.add_routes(rutas)
@@ -394,6 +527,8 @@ def main():
     srv = cfg.get("servidor", {})
     host, puerto = srv.get("host", "127.0.0.1"), srv.get("puerto", 8765)
     vt = VTuber(cfg)
+    if cfg.get("cerebro", {}).get("apagar_al_cerrar", True):
+        apagar_al_cerrar_ventana(vt)
     print(f"\n  Avatar (OBS):  http://{host}:{puerto}/avatar"
           f"\n  Panel:         http://{host}:{puerto}/panel"
           f"\n  Cerebro:       {vt.cerebro.modelo} en {vt.cerebro.url}"

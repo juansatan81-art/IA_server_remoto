@@ -68,10 +68,13 @@ class Memoria:
         hoy = datetime.now().strftime("%Y-%m-%d")
         otros_dias = len([d for d in e["dias"] if d != hoy])
         partes = []
-        if otros_dias == 0 and e["mensajes"] <= 1:
-            partes.append(f"{autor} escribe por primera vez: dale la bienvenida.")
-        elif otros_dias:
+        if hoy in e["dias"]:
+            # ya se le ha respondido hoy: sin volver a darle la bienvenida
+            partes.append(f"Ya has hablado hoy con {autor}: NO le des la bienvenida otra vez.")
+        if otros_dias:
             partes.append(f"{autor} ya ha venido a {otros_dias} directo(s) anteriores.")
+        elif hoy not in e["dias"]:
+            partes.append(f"{autor} escribe por primera vez: dale la bienvenida.")
         if e["notas"]:
             partes.append(f"Lo que recuerdas de {autor}: " + "; ".join(e["notas"]) + ".")
         return " ".join(partes)

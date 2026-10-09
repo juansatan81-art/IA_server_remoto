@@ -51,6 +51,8 @@ class Directo:
         self.cola = deque(maxlen=self.max_cola)
         self.eventos = deque(maxlen=50)
         self.respondidos = {}         # autor -> momento en que se le respondió
+        self.negativos = {}           # autor -> mensajes negativos (los trolls bajan en la cola)
+        self.seguidas_sola = 0        # veces seguidas que ha hablado sola sin que nadie escriba
         self.dichos = deque(maxlen=12)  # temas recientes de lo que ha dicho ella sola
         self.registro = []            # lo que pasa en el directo, para el resumen final
         self.animo = {"humor": 0.3, "energia": 0.8}
@@ -149,6 +151,7 @@ class Directo:
                 p += 1.5
             if m["autor"] not in self.vt.memoria.espectadores:
                 p += 2                                    # alguien nuevo
+            p -= 2.5 * self.negativos.get(m["autor"], 0)  # el que solo viene a molestar, al final
             hace = ahora - self.respondidos.get(m["autor"], -1e9)
             if hace < 300:
                 p -= 4 * (1 - hace / 300)                 # ya le respondió hace poco
@@ -158,12 +161,19 @@ class Directo:
             p -= (ahora - m["t"]) / self.caducidad * 2    # los recientes, antes
             return p + random.random() * 0.5              # un poco de azar, como una persona
 
-        elegido = max(self.cola, key=puntos)
+        elegido = dict(max(self.cola, key=puntos))
         # se quitan el elegido y los que dicen lo mismo
         iguales = [m for m in self.cola if m["clave"] == elegido["clave"]]
         for m in iguales:
             self.cola.remove(m)
         elegido["varios"] = len(iguales)
+        # si esa persona ha escrito varias cosas seguidas, se responden juntas
+        suyos = [m for m in self.cola if m["autor"] == elegido["autor"]]
+        if suyos:
+            for m in suyos:
+                self.cola.remove(m)
+            textos = sorted([(elegido["t"], elegido["texto"])] + [(m["t"], m["texto"]) for m in suyos])
+            elegido["texto"] = " / ".join(t for _, t in textos)
         ambiente = [f"{m['autor']}: {m['texto']}" for m in list(self.cola)[-5:]]
         return elegido, ambiente
 
@@ -187,8 +197,10 @@ class Directo:
         if self.plan:
             partes.append(f"Plan del directo de hoy: {self.plan}.")
         partes.append(self._texto_animo())
-        if self.vista and self._vista():
+        if self._vista():
             partes.append("La imagen que ves es tu pantalla del directo ahora mismo.")
+        else:
+            partes.append("Ahora mismo NO ves la pantalla: no digas lo que hay en ella.")
         if extra:
             partes.append(extra)
         if self.cambiar_tema:
@@ -199,7 +211,8 @@ class Directo:
     async def _bucle(self):
         while True:
             await asyncio.sleep(0.5)
-            if not self.activo or self.vt.ocupada():
+            # sin avatar abierto (ni panel ni OBS) no hay por dónde hablar: se espera
+            if not self.activo or self.vt.ocupada() or not self.vt.avatares:
                 continue
             if time.monotonic() - self.vt.fin_habla < self.pausa:
                 continue
@@ -216,6 +229,8 @@ class Directo:
                 await asyncio.sleep(3)
 
     def _programar_espontaneo(self, factor=1.0):
+        # cuanto más rato lleva hablando sola, más espacia las intervenciones (hasta x4)
+        factor *= min(4.0, 1.35 ** self.seguidas_sola)
         self.proximo_espontaneo = time.monotonic() + random.uniform(self.silencio_min, self.silencio_max) * factor
 
     async def _atender_chat(self):
@@ -228,7 +243,7 @@ class Directo:
             self._cambiar_animo(humor=-0.03)
             await self.vt.registrar("filtro", f"Ignorado ({motivo or 'no apto'}) — {m['autor']}: {m['texto']}")
             return
-        extra = [self.vt.memoria.sobre(m["autor"])]
+        extra = [self.vt.memoria.sobre(m["autor"]), self.vt.glosario.nota(m["texto"])]
         if m["varios"] > 1:
             extra.append(f"{m['varios']} personas han escrito esto mismo: puedes responder a todos a la vez.")
         if ambiente:
@@ -236,12 +251,15 @@ class Directo:
                          + " | ".join(ambiente))
         self.vt.memoria.visto(m["autor"])
         self.respondidos[m["autor"]] = time.monotonic()
+        self.seguidas_sola = 0
         if _POSITIVO.search(m["texto"]):
             self._cambiar_animo(humor=0.08)
         elif _NEGATIVO.search(m["texto"]):
             self._cambiar_animo(humor=-0.06)
+            self.negativos[m["autor"]] = self.negativos.get(m["autor"], 0) + 1
         imagenes = self._vista() if self.ver_en_respuestas else []
-        respuesta = await self.vt.responder_y_hablar(m["texto"], m["autor"], imagenes, self._nota(" ".join(extra)))
+        respuesta = await self.vt.responder_y_hablar(m["texto"], m["autor"], imagenes,
+                                                     self._nota(" ".join(e for e in extra if e)))
         if respuesta:
             self.cambiar_tema = False
             self._cambiar_animo(energia=-0.004)
@@ -281,14 +299,21 @@ class Directo:
         callado = int(time.monotonic() - self.vt.fin_habla)
         extra = f"El chat lleva un rato callado ({callado} s sin que nadie te hable)."
         if self.dichos:
-            extra += " Lo último que has dicho por tu cuenta: " + " | ".join(list(self.dichos)[-4:])
+            extra += (" Lo que ya has dicho por tu cuenta en este directo (NO lo repitas): "
+                      + " | ".join(list(self.dichos)[-8:]))
+        if random.random() < 0.25:   # de vez en cuando, alguna expresión de internet que conoce
+            terminos = self.vt.glosario.al_azar(2)
+            if terminos:
+                extra += (" Si encaja de forma natural (sin forzarlo), puedes usar alguna expresión de "
+                          "internet que conoces: " + "; ".join(f"{t['termino']} ({t['significado']})" for t in terminos))
         if not self.saludado:
             extra += " Acabas de empezar el directo: saluda a todo el mundo y cuenta qué vais a hacer hoy."
         dice = await self.vt.hablar_sola(self._nota(), self._vista(), extra)
         self.cambiar_tema = False
         if dice:
             self.saludado = True
-            self.dichos.append(dice[:120])
+            self.seguidas_sola += 1
+            self.dichos.append(dice[:150])
             self._cambiar_animo(energia=-0.006)
             self._programar_espontaneo()
         else:

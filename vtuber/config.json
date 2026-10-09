@@ -17,15 +17,17 @@
     "contexto": 8192,
     "pensar": "auto",
     "internet": true,
-    "mantener_cargado": "24h",
+    "mantener_cargado": "30m",
     "decidir_herramientas": true,
-    "max_tokens_pensando": 1500
+    "max_tokens_pensando": 800,
+    "apagar_al_cerrar": true
   },
   "ayudante": {
     "modelo": "qwen3:1.7b",
     "en_procesador": true,
     "filtro_entrada": true,
-    "filtro_salida": true
+    "filtro_salida": true,
+    "mantener_cargado": "30m"
   },
   "directo": {
     "silencio_min": 12,

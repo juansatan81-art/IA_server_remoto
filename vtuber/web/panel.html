@@ -50,6 +50,15 @@
   #estadoDirecto { font-size: 13px; color: var(--suave); margin-top: 8px; }
   #estadoDirecto b { color: var(--texto); }
   .encendido { color: var(--ok) !important; }
+  .termino { border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+  .termino b { display: block; }
+  .termino small { color: var(--suave); }
+  .termino textarea { margin-top: 6px; min-height: 44px; font-size: 14px; }
+  .termino .fila { margin-top: 6px; }
+  details summary { cursor: pointer; color: var(--suave); font-size: 14px; margin-top: 10px; }
+  .aprobado { display: flex; gap: 6px; align-items: baseline; font-size: 14px; padding: 4px 0; border-bottom: 1px solid var(--borde); }
+  .aprobado span { flex: 1; }
+  .aprobado button { padding: 2px 8px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -126,6 +135,21 @@
       <video id="pantalla" muted playsinline></video>
       <p class="nota">Mientras compartes la pantalla (o una ventana, como un juego), cada mensaje
         que le escribas lleva una captura. También puedes adjuntar fotos o pegarlas con Ctrl+V.</p>
+    </section>
+    <section>
+      <h2>Glosario</h2>
+      <p class="nota" style="margin-top:0">Palabras y memes que Lara conoce sin buscarlos. Cuando busca uno nuevo,
+        aparece aquí <b>pendiente</b>: corrige el significado si hace falta y apruébalo.</p>
+      <div id="pendientes"></div>
+      <form id="formTermino">
+        <input id="nuevoTermino" type="text" placeholder="Añadir término" autocomplete="off" style="flex:0 0 40%">
+        <input id="nuevoSignificado" type="text" placeholder="Qué significa" autocomplete="off">
+        <button id="anadirTermino">+</button>
+      </form>
+      <details>
+        <summary id="resumenAprobados">Aprobados</summary>
+        <div id="aprobados"></div>
+      </details>
     </section>
     <section>
       <h2>Emociones</h2>
