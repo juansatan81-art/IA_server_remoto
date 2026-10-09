@@ -7,3 +7,6 @@ vtuber/arte/vista_previa_capas.png
 # lo que Lara recuerda (espectadores y directos)
 vtuber/memoria/
 vtuber/config.local.json
+
+# vídeos generados por herramientas/motion_carta.py
+vtuber/arte/motion/salida/

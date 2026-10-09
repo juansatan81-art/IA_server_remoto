@@ -1,0 +1,11 @@
+{
+  "pose1": {
+    "archivo": "pose1.jpg",
+    "descripcion": "Brazos cruzados",
+    "escala": [0.355, 0.335],
+    "ancla": [1035, 310],
+    "centro_x": 660,
+    "arriba": 690,
+    "hombro": 790
+  }
+}

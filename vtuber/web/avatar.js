@@ -287,8 +287,20 @@ function reboteHace(segundos) {
   return historialRebote[0] || { x: 0, y: 0 };
 }
 
+// brazos en otra pose (herramientas/poses.py): se cambia el cuerpo por el torso sin brazos
+// y los brazos se dibujan encima del pecho, moviéndose con el cuerpo
+let poseBrazos = null;
+
+async function ponerBrazos(nombre) {
+  if (!nombre) { poseBrazos = null; return; }
+  const clave = `brazos_${nombre}`;
+  if (!capas.cuerpo_sin_brazos) capas.cuerpo_sin_brazos = await cargarImagen('capas/cuerpo_sin_brazos.png');
+  if (!capas[clave]) capas[clave] = await cargarImagen(`capas/${clave}.png`);
+  poseBrazos = clave;
+}
+
 function dibujarCuerpo(p) {
-  franjasCuerpo(capas.cuerpo, p);
+  franjasCuerpo(poseBrazos ? capas.cuerpo_sin_brazos : capas.cuerpo, p);
   // el pecho rebota respecto al torso: diferencia entre su muelle y el del torso
   const c = anim.cuerpo, q = anim.pecho;
   const e = ESTILO_PECHO;
@@ -312,6 +324,7 @@ function dibujarCuerpo(p) {
     const r = reboteHace(k * e.retraso);
     return { dx: r.x * k, dy: r.y * k * 1.15, sx: 1 - r.y * k * e.aplastar };
   });
+  if (poseBrazos && capas[poseBrazos]) franjasCuerpo(capas[poseBrazos], p);
 }
 
 function trazo(ancho, color = '#000', g = ctx) {
@@ -777,9 +790,11 @@ async function iniciar() {
     ...Object.keys(PEGATINAS)];
   const imagenes = await Promise.all(nombres.map((n) => cargarImagen(`capas/${n}.png`)));
   capas = Object.fromEntries(nombres.map((n, i) => [n, imagenes[i]]));
+  window.avatar.listo = true;
 
   if (parametros.get('fondo')) document.body.style.background = parametros.get('fondo');
   if (parametros.get('emocion')) ponerEmocion(parametros.get('emocion'));
+  if (parametros.get('brazos')) await ponerBrazos(parametros.get('brazos'));
   conectar();
 
   let anterior = performance.now();
@@ -805,7 +820,7 @@ function silenciar(si) {
 }
 
 window.avatar = {
-  emocion: ponerEmocion, hablar, parar, cabeza: ponerCabeza, silenciar, EXPRESIONES,
+  emocion: ponerEmocion, hablar, parar, cabeza: ponerCabeza, silenciar, brazos: ponerBrazos, EXPRESIONES,
   estado: () => ({ emocion, actual, silenciado: volumen ? volumen.gain.value === 0 : silenciado }),
   pecho: () => ({ ...(anim.rebote || { x: 0, y: 0 }) }),   // rebote actual del pecho, en px
 };
