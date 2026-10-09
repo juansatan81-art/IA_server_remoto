@@ -28,6 +28,7 @@ FPS = 60
 LADO = 1080
 DURACION = 14.9
 BPM = 120                              # medido: un rebote cada 0,5 s
+FUERZA = 1.0                           # cuánto se deforman pelo, flequillo, brazos y cuerpo
 ACENTO = (232, 160, 30)                # BGR (azul como la referencia)
 FONDO = (250, 244, 238)
 
@@ -62,6 +63,7 @@ def guion(duracion, disponibles):
         x = 3 * math.sin(2 * math.pi * BPM / 60 * (t - 0.7))
         pose = pose_en(t, disponibles)
         fotos.append({"brazos": pose, "cabeza": [x, 0, grados / 3.44],
+                      "ritmo": {"bpm": BPM, "fuerza": FUERZA, "tiempo": t, "ancla": 1.0},
                       "emocion": "avergonzada" if pose in ("pose3", "pose4") else "neutral"})
     return {"fps": FPS, "fotogramas": fotos}
 

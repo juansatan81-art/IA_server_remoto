@@ -91,6 +91,36 @@ const anim = {
 };
 const lagrimas = [];
 
+// Ritmo: deformaciones al compás, medidas en el vídeo de referencia del motion graphic
+// (cada zona con su retraso: el flequillo y el pelo siguen a la cabeza, los mechones se
+// abren y se cierran, el cuerpo respira ensanchándose, los brazos suben y bajan...).
+// avatar.ritmo({ bpm: 120, fuerza: 1, tiempo }) — tiempo: el del vídeo, para ir a compás.
+const ritmo = { bpm: 0, fuerza: 0, tiempo: null, ancla: 1.0 };
+function ponerRitmo(o = {}) {
+  if (o.bpm !== undefined) ritmo.bpm = o.bpm;
+  if (o.fuerza !== undefined) ritmo.fuerza = o.fuerza;
+  if (o.tiempo !== undefined) ritmo.tiempo = o.tiempo;
+  if (o.ancla !== undefined) ritmo.ancla = o.ancla;   // segundo en que cae un golpe
+}
+// 1 justo en el golpe (más `retraso` s), -1 a mitad de compás. lado=true: la componente
+// lateral (un cuarto de compás desfasada), para que no se mueva todo a la vez
+function onda(retraso = 0, lado = false) {
+  if (!ritmo.fuerza || !ritmo.bpm) return 0;
+  const tt = ritmo.tiempo ?? t;
+  const fase = 2 * Math.PI * (tt - ritmo.ancla - retraso) * ritmo.bpm / 60;
+  return (lado ? Math.sin(fase) : Math.cos(fase)) * ritmo.fuerza;
+}
+
+// dibuja una capa del busto en franjas, cada una desplazada por fn(y) -> {dx, dy}
+function franjasBusto(img, fn) {
+  if (!ritmo.fuerza) { ctx.drawImage(img, 0, 0); return; }
+  const paso = 3;
+  for (let y = 0; y < img.height; y += paso) {
+    const d = fn(y + paso / 2);
+    ctx.drawImage(img, 0, y, img.width, paso, d.dx, y + d.dy, img.width, paso + 1);
+  }
+}
+
 function forma(e) {
   return e.feliz > 0.5 ? 'feliz' : e.redondo > 0.5 ? 'redondo' : 'normal';
 }
@@ -215,7 +245,8 @@ function moverCuerpo(p, dt) {
   // movimientos bruscos y luego oscila un poco hasta asentarse
   const q = anim.pecho;
   const e = ESTILO_PECHO;
-  const objY = c.y * 0.5 - p.respira * 1.5 + (p.y - c.y) * e.tiron, objX = c.x * 0.5;
+  const objY = c.y * 0.5 - p.respira * 1.5 + (p.y - c.y) * e.tiron + 8 * onda(0.04),
+    objX = c.x * 0.5 + 3 * onda(0.08, true);
   q.vy += ((objY - q.y) * e.rigidez - q.vy * e.freno) * dt;
   q.y += q.vy * dt;
   q.vx += ((objX - q.x) * 60 - q.vx * 6) * dt;
@@ -249,7 +280,15 @@ function dibujarPeloLargo(p) {
     const viento = 2.5 * Math.sin(t * 1.3 - m * 0.012);
     const dx = p.x * peso + (anim.pelo - p.x) * libre * 1.3 + viento * libre;
     const dy = p.y * peso;
-    ctx.drawImage(capas.pelo_largo, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
+    if (!ritmo.fuerza) {
+      ctx.drawImage(capas.pelo_largo, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
+      continue;
+    }
+    // al compás, cada lado del pelo se abre y se cierra (los mechones se ensanchan)
+    const abrir = 10 * onda(0.16) * libre, lado = 6 * onda(0.2, true) * libre;
+    const mitad = W / 2;
+    ctx.drawImage(capas.pelo_largo, 0, y, mitad, FRANJA, dx - abrir + lado, y + dy, mitad, FRANJA + 1);
+    ctx.drawImage(capas.pelo_largo, mitad, y, mitad, FRANJA, mitad + dx + abrir + lado, y + dy, mitad, FRANJA + 1);
   }
 }
 
@@ -266,10 +305,16 @@ function franjasCuerpo(img, p, extra = null) {
     let dx = c.x * peso + c.incl * (H - m) * 0.35;
     let dy = c.y * peso * 0.8 - (H - m) * crecer;
     let sx = 1;
+    if (ritmo.fuerza) {
+      // respira con el compás: se ensancha y se estira un 3 %, más cuanto más abajo
+      const r = onda(0.12);
+      sx = 1 + 0.03 * r * abajo;
+      dy -= (H - m) * 0.016 * r;
+    }
     if (extra) {
       const e = extra(m);
       if (e === null) continue;                // fila sin pecho: nada que dibujar
-      dx += e.dx; dy += e.dy; sx = e.sx;
+      dx += e.dx; dy += e.dy; sx *= e.sx;
     }
     // sx estrecha o ensancha la franja alrededor del centro del lienzo
     ctx.drawImage(img, 0, y, W, FRANJA, dx + W / 2 * (1 - sx), y + dy, W * sx, FRANJA + 1);
@@ -324,7 +369,12 @@ function dibujarCuerpo(p) {
     const r = reboteHace(k * e.retraso);
     return { dx: r.x * k, dy: r.y * k * 1.15, sx: 1 - r.y * k * e.aplastar };
   });
-  if (poseBrazos && capas[poseBrazos]) franjasCuerpo(capas[poseBrazos], p);
+  if (poseBrazos && capas[poseBrazos]) {
+    const sube = 11 * onda(0.1), estira = 0.045 * onda(0.14), mece = 5 * onda(0.1, true);
+    franjasCuerpo(capas[poseBrazos], p, (m) => ({
+      dx: mece, dy: sube + (m - 900) * estira, sx: 1 + 0.022 * onda(0.14),
+    }));
+  }
 }
 
 function trazo(ancho, color = '#000', g = ctx) {
@@ -564,7 +614,12 @@ function dibujar(p) {
   ctx.save();
   transformarCabeza(p);
   aBusto();
-  ctx.drawImage(capas.pelo_cabeza, 0, 0);
+  // el volumen de arriba se aplasta en el golpe y rebota; las puntas se balancean
+  const estirar = -0.032 * onda(0.06), balanceo = 16 * onda(0.12, true);
+  franjasBusto(capas.pelo_cabeza, (y) => ({
+    dx: balanceo * suave(150, 900, y) * suave(150, 900, y),
+    dy: (y - 620) * estirar,
+  }));
   ctx.restore();
 
   dibujarCuerpo(p);
@@ -577,7 +632,12 @@ function dibujar(p) {
   // el flequillo se adelanta un poco más que la cara al girar
   ctx.save();
   ctx.translate(p.x * 0.14 + (anim.pelo - p.x) * 0.15, p.y * 0.06);
-  ctx.drawImage(capas.flequillo, 0, 0);
+  // y se mece como si girara un poco desde arriba, con algo de retraso
+  const mecer = 13 * onda(0.09, true), botar = 6 * onda(0.05);
+  franjasBusto(capas.flequillo, (y) => {
+    const k = limitar((y - 270) / 190);
+    return { dx: mecer * k, dy: botar * k };
+  });
   ctx.restore();
 
   // los rasgos van delante del flequillo (el ojo derecho tapa parte del pelo)
@@ -820,7 +880,7 @@ function silenciar(si) {
 }
 
 window.avatar = {
-  emocion: ponerEmocion, hablar, parar, cabeza: ponerCabeza, silenciar, brazos: ponerBrazos, EXPRESIONES,
+  emocion: ponerEmocion, hablar, parar, cabeza: ponerCabeza, silenciar, brazos: ponerBrazos, ritmo: ponerRitmo, EXPRESIONES,
   estado: () => ({ emocion, actual, silenciado: volumen ? volumen.gain.value === 0 : silenciado }),
   pecho: () => ({ ...(anim.rebote || { x: 0, y: 0 }) }),   // rebote actual del pecho, en px
 };

@@ -3,7 +3,8 @@
 //   node herramientas/grabar_avatar.js <url del avatar> <guion.json> <carpeta de salida>
 //
 // guion.json: { "fps": 60, "fotogramas": [ { "brazos": "pose1", "cabeza": [x, y, incl],
-//                                            "emocion": "avergonzada" }, ... ] }
+//                                            "emocion": "avergonzada",
+//                                            "ritmo": { "bpm": 120, "fuerza": 1, "tiempo": 0.5 } }, ... ] }
 // Cada fotograma se guarda como PNG transparente (00000.png, 00001.png...).
 const fs = require('fs');
 const path = require('path');
@@ -51,6 +52,7 @@ const { chromium } = require('playwright');
     }
     const datos = await pagina.evaluate(({ f, paso }) => {
       if (f.cabeza) window.avatar.cabeza(...f.cabeza);
+      if (f.ritmo) window.avatar.ritmo(f.ritmo);
       window.__reloj.avanzar(paso);
       return document.querySelector('canvas').toDataURL('image/png');
     }, { f, paso: 1000 / fps });
