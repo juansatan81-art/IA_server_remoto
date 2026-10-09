@@ -44,7 +44,7 @@ const NEUTRAL = {
   brillo: 0,                  // reflejos blancos en los ojos
   cejaVis: 0, cejaY: 0, cejaAng: 0, cejaAsim: 0,
   curva: 1, ancho: 1, asim: 0,          // boca vectorial (presumida, pensativa)
-  rubor: 0, lagrimas: 0, enojo: 0, sudor: 0, chispas: 0,
+  rubor: 0, ruborSuave: 0, lagrimas: 0, enojo: 0, sudor: 0, chispas: 0,
   inclinacion: 0, cabezaY: 0,
   miradaX: 0, miradaY: 0, miradaFija: 0,
 };
@@ -58,6 +58,9 @@ const EXPRESIONES = {
   llorando: { lidOut: 38, lidIn: 8, brillo: 1, cejaVis: 1, cejaAng: -26, lagrimas: 1,
     cabezaY: 12, inclinacion: 0.015 },
   sorprendida: { redondo: 1, brillo: 1, cejaVis: 1, cejaY: -24, cabezaY: -6 },
+  // tímida: sus ojos de siempre, sin cejas ni gota, mirando abajo y con un rubor suave
+  // y ancho bajo los ojos (como en el motion graphic de la carta)
+  timida: { lidOut: 10, lidIn: 10, ruborSuave: 1, miradaY: 0.55, miradaFija: 1, inclinacion: -0.015 },
   avergonzada: { lidOut: 22, lidIn: 22, rubor: 1, sudor: 1, cejaVis: 0.9, cejaAng: -14,
     brillo: 0.6, miradaX: -1, miradaY: 0.5, miradaFija: 1, inclinacion: -0.02 },
   presumida: { lidOut: 36, lidIn: 26, curva: 1, asim: 1, cejaVis: 1, cejaY: -4,
@@ -69,7 +72,7 @@ const EXPRESIONES = {
 // Boca de cada emoción cuando no habla: una de tus piezas o la vectorial
 const BOCAS = {
   neutral: 'sonrisa', feliz: 'a', enojada: 'triste', triste: 'triste', llorando: 'o',
-  sorprendida: 'o', avergonzada: 'sonrisa', presumida: 'vector', pensativa: 'vector',
+  sorprendida: 'o', avergonzada: 'sonrisa', timida: 'sonrisa', presumida: 'vector', pensativa: 'vector',
 };
 
 const actual = { ...NEUTRAL };
@@ -295,10 +298,10 @@ function dibujarPeloLargo(p) {
 // El torso se dibuja por franjas: arriba (hombros) sigue mucho a la cabeza y
 // abajo casi nada, así se dobla como una columna en vez de moverse en bloque.
 // extra(m): desplazamiento adicional de la franja de la fila m -> { dx, dy, sx }
-function franjasCuerpo(img, p, extra = null) {
+function franjasCuerpo(img, p, extra = null, desde = CUERPO_ARRIBA) {
   const c = anim.cuerpo;
   const crecer = p.respira * 0.006;           // respiración: se estira desde abajo
-  for (let y = CUERPO_ARRIBA; y < H; y += FRANJA) {
+  for (let y = desde; y < H; y += FRANJA) {
     const m = y + FRANJA / 2;
     const abajo = suave(CUERPO_ARRIBA, H, m);
     const peso = lerp(0.7, 0.06, abajo);
@@ -369,13 +372,20 @@ function dibujarCuerpo(p) {
     const r = reboteHace(k * e.retraso);
     return { dx: r.x * k, dy: r.y * k * 1.15, sx: 1 - r.y * k * e.aplastar };
   });
-  if (poseBrazos && capas[poseBrazos]) {
+}
+
+// los brazos se dibujan al final, con el movimiento del cuerpo: así una mano o una carta
+// pueden ir delante de la cara (en las poses de brazos abajo no tocan la cabeza)
+function dibujarBrazos(p) {
+  if (!poseBrazos || !capas[poseBrazos]) return;
+  {
     const sube = 11 * onda(0.1), estira = 0.045 * onda(0.14), mece = 5 * onda(0.1, true);
     // el hombro queda pegado al cuerpo; el movimiento crece hacia los codos y las manos
+    // empieza más arriba que el cuerpo: en algunas poses la mano llega a la cara
     franjasCuerpo(capas[poseBrazos], p, (m) => {
       const k = suave(760, 1060, m);
       return { dx: mece * k, dy: (sube + (m - 900) * estira) * k, sx: 1 + 0.022 * onda(0.14) * k };
-    });
+    }, 300);
   }
 }
 
@@ -400,6 +410,39 @@ const OJOS = { x: 340, y: 420, w: 590, h: 210 };   // zona de los ojos (busto)
 const lienzoOjos = document.createElement('canvas');
 lienzoOjos.width = OJOS.w; lienzoOjos.height = OJOS.h;
 const gOjos = lienzoOjos.getContext('2d');
+
+// rubor difuminado y ancho, con rayitas finas (bajo los ojos, sobre las mejillas)
+function dibujarRuborSuave(fuerza) {
+  if (fuerza < 0.02) return;
+  for (const nombre of ['rubor_izq', 'rubor_der']) {
+    const p = PEGATINAS[nombre];
+    if (!p) continue;
+    const cx = p.x + p.w / 2 + (nombre === 'rubor_izq' ? 12 : -12), cy = p.y + p.h / 2 - 28;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(0.85, 0.45);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 115);
+    g.addColorStop(0, `rgba(120,120,128,${0.42 * fuerza})`);
+    g.addColorStop(0.6, `rgba(140,140,148,${0.22 * fuerza})`);
+    g.addColorStop(1, 'rgba(160,160,168,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, 115, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.55 * fuerza;
+    trazo(3, '#7d7d86');
+    for (let i = -2; i <= 2; i++) {
+      const x = cx + i * 24;
+      ctx.beginPath();
+      ctx.moveTo(x - 7, cy + 14);
+      ctx.lineTo(x + 7, cy - 14);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
 
 function dibujarOjos(parpadeo) {
   const a = actual;
@@ -649,6 +692,7 @@ function dibujar(p) {
   const parpadeo = d < 1 ? Math.sin(d * Math.PI) : 0;
   pegatina('rubor_izq', actual.rubor);
   pegatina('rubor_der', actual.rubor);
+  dibujarRuborSuave(actual.ruborSuave);
   dibujarOjos(parpadeo);
   dibujarLagrimas();
   dibujarBoca();
@@ -660,6 +704,8 @@ function dibujar(p) {
   dibujarVena();
   dibujarChispas();
   ctx.restore();
+
+  dibujarBrazos(p);
 }
 
 // ---------------------------------------------------------------- audio y voz

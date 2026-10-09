@@ -37,7 +37,6 @@ ESCENAS = [(0.0, "pose1"), (2.20, "pose2"), (4.02, "pose3"), (5.85, "pose4"),
            (7.40, "pose1"), (9.25, "pose2"), (11.13, "pose3"), (12.92, "pose4")]
 DESTELLOS = [1.83, 3.78, 5.23, 5.43, 8.87, 10.95, 12.38, 12.58]
 ESPEJO_DESDE = 7.40                    # la segunda mitad, con la composición en espejo
-LLENADO = {"pose1": 0.25, "pose2": 0.5, "pose3": 0.75, "pose4": 1.0}   # medidor de corazones
 
 
 def pose_en(t, disponibles):
@@ -54,6 +53,7 @@ def rebote(t):
 
 
 def guion(duracion, disponibles):
+    poses = json.loads((MOTION / "poses.json").read_text(encoding="utf-8"))
     fotos = []
     for i in range(int(duracion * FPS)):
         t = i / FPS
@@ -62,9 +62,10 @@ def guion(duracion, disponibles):
         grados = 1.25 * (1 + math.cos(2 * math.pi * BPM / 60 * (t - 0.83))) * lado
         x = 3 * math.sin(2 * math.pi * BPM / 60 * (t - 0.7))
         pose = pose_en(t, disponibles)
-        fotos.append({"brazos": pose, "cabeza": [x, 0, grados / 3.44],
+        cx, cy, ci = poses.get(pose, {}).get("cabeza", [0, 0, 0])   # p. ej. agachar la cabeza hacia la mano
+        fotos.append({"brazos": pose, "cabeza": [x + cx, cy, grados / 3.44 + ci],
                       "ritmo": {"bpm": BPM, "fuerza": FUERZA, "tiempo": t, "ancla": 1.0},
-                      "emocion": "avergonzada" if pose in ("pose3", "pose4") else "neutral"})
+                      "emocion": "timida"})
     return {"fps": FPS, "fotogramas": fotos}
 
 
@@ -88,34 +89,64 @@ def grabar(guion_, carpeta):
 
 
 # ------------------------------------------------------------------ dibujos fijos
-def medidor(llenado):
-    """Arco de corazones con flecha (a doble tamaño y reducido, para bordes suaves)."""
+FLECHA = {"pose1": 182, "pose2": 205, "pose3": 255, "pose4": 270}   # ángulo de la aguja (medido)
+
+
+def corazon(dib, cx, cy, tam, relleno, borde, brillo=True):
+    """Corazón brillante como el de la referencia (relleno, borde grueso y reflejo)."""
+    pts = [(cx + tam * 16 * math.sin(u) ** 3 / 17, cy - tam * (13 * math.cos(u) - 5 * math.cos(2 * u)
+           - 2 * math.cos(3 * u) - math.cos(4 * u)) / 17) for u in np.linspace(0, 2 * math.pi, 120)]
+    dib.polygon(pts, fill=relleno, outline=borde, width=max(3, int(tam * 0.12)))
+    if brillo:
+        dib.ellipse((cx - tam * 0.62, cy - tam * 0.62, cx - tam * 0.22, cy - tam * 0.32), fill=(255, 255, 255, 230))
+
+
+def medidor(pose):
+    """El «metrónomo» de corazones de la referencia: arco de tramos de claro a azul intenso,
+    corazón grande al final, dos corazoncitos flotando y una aguja que cambia en cada pose."""
+    from PIL import Image, ImageDraw, ImageFilter
     k = 2
-    img = np.zeros((520 * k, 520 * k, 4), np.uint8)
-    c = (260 * k, 300 * k)
-    r = 170 * k
-    tramos = 8
+    W_, H_ = 430 * k, 340 * k
+    azul = (ACENTO[2], ACENTO[1], ACENTO[0])                  # ACENTO está en BGR
+    oscuro = (20, 70, 170)
+    capa = Image.new("RGBA", (W_, H_), (0, 0, 0, 0))
+    d = ImageDraw.Draw(capa)
+    cx, cy, r, grueso = 320 * k, 430 * k, 270 * k, 46 * k
+    a0, a1, tramos = 204, 266, 7
+    # contorno grueso del arco y luego los tramos, cada uno un poco más azul
+    d.arc((cx - r - grueso / 2, cy - r - grueso / 2, cx + r + grueso / 2, cy + r + grueso / 2), a0 - 1, a1 + 1,
+          fill=oscuro, width=int(grueso + 10 * k))
     for i in range(tramos):
-        a0, a1 = 200 + i * (140 / tramos) + 1.5, 200 + (i + 1) * (140 / tramos) - 1.5
-        lleno = (i + 0.5) / tramos <= llenado
-        color = (*ACENTO, 255) if lleno else (255, 255, 255, 255)
-        cv2.ellipse(img, c, (r, r), 0, a0, a1, (40, 40, 40, 255), 46 * k, cv2.LINE_AA)
-        cv2.ellipse(img, c, (r, r), 0, a0, a1, color, 34 * k, cv2.LINE_AA)
-    def corazon(cx, cy, tam, color):
-        pts = [(cx + tam * 16 * math.sin(u) ** 3 / 17, cy - tam * (13 * math.cos(u) - 5 * math.cos(2 * u)
-               - 2 * math.cos(3 * u) - math.cos(4 * u)) / 17) for u in np.linspace(0, 2 * math.pi, 80)]
-        cv2.fillPoly(img, [np.int32(pts)], color, cv2.LINE_AA)
-    fin = math.radians(340)
-    corazon(int(c[0] + (r + 20 * k) * math.cos(fin)), int(c[1] + (r + 20 * k) * math.sin(fin)) - 30 * k,
-            46 * k, (*ACENTO, 255))
-    corazon(int(c[0] + (r - 40 * k) * math.cos(fin)) - 70 * k, int(c[1] + (r) * math.sin(fin)) - 90 * k,
-            26 * k, (*ACENTO, 255))
-    # flecha: gira según lo lleno (de izquierda a arriba)
-    ang = math.radians(180 + 90 * llenado)
-    punta = (int(c[0] + (r - 60 * k) * math.cos(ang)), int(c[1] + (r - 60 * k) * math.sin(ang)))
-    cv2.arrowedLine(img, c, punta, (40, 40, 40, 255), 22 * k, cv2.LINE_AA, tipLength=0.28)
-    cv2.arrowedLine(img, c, punta, (*ACENTO, 255), 12 * k, cv2.LINE_AA, tipLength=0.28)
-    return cv2.resize(img, (520, 520), interpolation=cv2.INTER_AREA)
+        f = i / (tramos - 1)
+        color = tuple(int(c1 + (c2 - c1) * f) for c1, c2 in zip((232, 244, 255), azul)) + (255,)
+        b0 = a0 + (a1 - a0) * i / tramos + 0.6
+        b1 = a0 + (a1 - a0) * (i + 1) / tramos - 0.6
+        d.arc((cx - r - grueso / 2 + 5 * k, cy - r - grueso / 2 + 5 * k, cx + r + grueso / 2 - 5 * k,
+               cy + r + grueso / 2 - 5 * k), b0, b1, fill=color, width=int(grueso - 4 * k))
+    corazon(d, 330 * k, 165 * k, 72 * k, azul + (255,), oscuro)
+    corazon(d, 112 * k, 98 * k, 42 * k, azul + (255,), oscuro)
+    corazon(d, 168 * k, 140 * k, 26 * k, azul + (255,), oscuro)
+    # aguja: flecha blanca con borde azul que sale de un corazoncito
+    px, py = 235 * k, 300 * k
+    ang = math.radians(FLECHA.get(pose, 182))
+    largo = 150 * k
+    fx, fy = px + largo * math.cos(ang), py + largo * math.sin(ang)
+    for ancho, color in ((20 * k, oscuro), (10 * k, (255, 255, 255))):
+        d.line((px, py, fx, fy), fill=color, width=ancho)
+        punta = [(fx + 34 * k * math.cos(ang), fy + 34 * k * math.sin(ang)),
+                 (fx + 22 * k * math.cos(ang + 2.2), fy + 22 * k * math.sin(ang + 2.2)),
+                 (fx + 22 * k * math.cos(ang - 2.2), fy + 22 * k * math.sin(ang - 2.2))]
+        d.polygon(punta, fill=color)
+        if color == oscuro:
+            d.polygon(punta, outline=oscuro, width=8 * k)
+    corazon(d, px, py, 34 * k, azul + (255,), oscuro, brillo=False)
+    # brillo azul alrededor de todo
+    alfa = capa.split()[3].filter(ImageFilter.MaxFilter(9)).filter(ImageFilter.GaussianBlur(10 * k))
+    halo = Image.new("RGBA", capa.size, azul + (0,))
+    halo.putalpha(alfa.point(lambda v: int(v * 0.8)))
+    final = Image.alpha_composite(halo, capa).resize((430, 340), Image.LANCZOS)
+    rgba = np.array(final)
+    return np.dstack([rgba[..., 2], rgba[..., 1], rgba[..., 0], rgba[..., 3]])   # a BGRA
 
 
 def pegar(lienzo, rgba, x, y, opacidad=1.0):
@@ -131,7 +162,7 @@ def pegar(lienzo, rgba, x, y, opacidad=1.0):
 
 def componer(carpeta, duracion, salida):
     fotos = sorted((carpeta / "frames").glob("*.png"))
-    medidores = {p: medidor(v) for p, v in LLENADO.items()}
+    medidores = {p: medidor(p) for p in FLECHA}
     ffmpeg = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
                                "-s", f"{LADO}x{LADO}", "-r", str(FPS), "-i", "-", "-c:v", "libx264",
                                "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", str(salida)],
@@ -156,9 +187,7 @@ def componer(carpeta, duracion, salida):
         lienzo[-44:] = np.array(ACENTO, np.float32) / 255
 
         pose = pose_en(t, disponibles)
-        m = medidores.get(pose, medidores["pose1"])
-        m = cv2.resize(m, None, fx=0.78, fy=0.78, interpolation=cv2.INTER_AREA)
-        pegar(lienzo, m, -30, 300 + dy, 1.0)
+        pegar(lienzo, medidores.get(pose, medidores["pose1"]), 10, 300 + dy, 1.0)
 
         # Lara, con contorno blanco y brillo de color alrededor
         esc = 0.84 * zoom

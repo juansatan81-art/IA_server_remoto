@@ -2,10 +2,71 @@
   "pose1": {
     "archivo": "pose1.jpg",
     "descripcion": "Brazos cruzados",
-    "escala": [0.355, 0.335],
-    "ancla": [1035, 310],
+    "escala": [
+      0.355,
+      0.335
+    ],
+    "ancla": [
+      1035,
+      310
+    ],
     "centro_x": 660,
     "arriba": 690,
     "hombro": 790
+  },
+  "pose2": {
+    "archivo": "pose2.jpg",
+    "descripcion": "Mano al pecho",
+    "escala": [
+      0.42,
+      0.38
+    ],
+    "ancla": [
+      1005,
+      330
+    ],
+    "centro_x": 665,
+    "arriba": 722,
+    "hombro": 790
+  },
+  "pose3": {
+    "archivo": "pose3.jpg",
+    "descripcion": "Mano a la boca",
+    "escala": [
+      0.44,
+      0.5
+    ],
+    "ancla": [
+      962,
+      517
+    ],
+    "centro_x": 665,
+    "arriba": 722,
+    "hombro": 790,
+    "cabeza": [
+      -22,
+      28,
+      -0.3
+    ]
+  },
+  "pose4": {
+    "archivo": "pose4.jpg",
+    "descripcion": "La carta (un libro con corazón)",
+    "escala": [
+      0.52,
+      0.52
+    ],
+    "ancla": [
+      977,
+      915
+    ],
+    "centro_x": 665,
+    "arriba": 684,
+    "hombro": 790,
+    "cabeza": [
+      0,
+      30,
+      0
+    ]
   }
 }
