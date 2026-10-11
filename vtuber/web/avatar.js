@@ -346,7 +346,8 @@ function reboteHace(segundos) {
   return historialRebote[0] || { x: 0, y: 0 };
 }
 
-// brazos en otra pose (herramientas/poses.py): se cambia el cuerpo por el torso sin brazos
+// brazos en otra pose (las genera poses.py, que se mudó con el motion graphic a
+// YouTube-Automatizacion-IA/produccion/edits/edit-01-lara-la-carta): se cambia el cuerpo por el torso sin brazos
 // y los brazos se dibujan encima del pecho, moviéndose con el cuerpo
 let poseBrazos = null;
 

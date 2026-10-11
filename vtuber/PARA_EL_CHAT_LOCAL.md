@@ -1,5 +1,8 @@
 # Encargo para el chat local «VTuber 2D con IA setup»
 
+> **2026-10-11 · Hecho, y el motion graphic se mudó.** Todo lo de «la carta» (arte/motion, motion_carta.py, grabar_avatar.js, poses.py) está ahora en el proyecto del canal: `YouTube-Automatizacion-IA/produccion/edits/edit-01-lara-la-carta/`, con una copia congelada del avatar de entonces. Las rutas de abajo son las de antes de la mudanza.
+
+
 Lo ha preparado el chat en la nube (rama `claude/gallant-goodall-ep9rxq` de
 `juansatan81-art/IA_server_remoto`). Juan Luis te pide tres cosas:
 
