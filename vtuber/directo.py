@@ -167,13 +167,22 @@ class Directo:
         for m in iguales:
             self.cola.remove(m)
         elegido["varios"] = len(iguales)
-        # si esa persona ha escrito varias cosas seguidas, se responden juntas
-        suyos = [m for m in self.cola if m["autor"] == elegido["autor"]]
-        if suyos:
-            for m in suyos:
+        # si esa persona ha escrito varias cosas SEGUIDAS (menos de 20 s entre una y otra,
+        # como quien parte una frase en varios mensajes), se responden juntas; como mucho 3.
+        # Lo que escribió en otro momento se queda en la cola como otro mensaje.
+        # Van en líneas separadas, sin barras (antes se juntaba todo con " / ", y con los
+        # bots salían frases sueltas sin relación pegadas en un solo mensaje).
+        suyos = sorted((m for m in self.cola if m["autor"] == elegido["autor"]), key=lambda m: m["t"])
+        juntos = [(elegido["t"], elegido["texto"])]
+        for m in suyos:
+            if len(juntos) >= 3:
+                break
+            if min(abs(m["t"] - t) for t, _ in juntos) <= 20:
+                juntos.append((m["t"], m["texto"]))
                 self.cola.remove(m)
-            textos = sorted([(elegido["t"], elegido["texto"])] + [(m["t"], m["texto"]) for m in suyos])
-            elegido["texto"] = " / ".join(t for _, t in textos)
+        juntos.sort()
+        elegido["seguidos"] = len(juntos)
+        elegido["texto"] = "\n".join(t for _, t in juntos)
         ambiente = [f"{m['autor']}: {m['texto']}" for m in list(self.cola)[-5:]]
         return elegido, ambiente
 
@@ -246,6 +255,8 @@ class Directo:
         extra = [self.vt.memoria.sobre(m["autor"]), self.vt.glosario.nota(m["texto"])]
         if m["varios"] > 1:
             extra.append(f"{m['varios']} personas han escrito esto mismo: puedes responder a todos a la vez.")
+        if m.get("seguidos", 1) > 1:
+            extra.append(f"{m['autor']} ha escrito {m['seguidos']} mensajes seguidos: respóndele a todo junto, con naturalidad.")
         if ambiente:
             extra.append("Otros mensajes recientes del chat (solo para que sepas el ambiente): "
                          + " | ".join(ambiente))

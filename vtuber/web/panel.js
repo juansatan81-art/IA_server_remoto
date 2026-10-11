@@ -307,19 +307,37 @@ $('ytDesconectar').onclick = async () => {
 };
 
 // espectadores de mentira para probar cómo elige a quién responder
-const BOTS = ['Pablo', 'Marta_gamer', 'xXDarkXx', 'Lucía', 'Andrés', 'NoobMaster', 'Sofi', 'Kevin2009'];
+const BOTS = ['Pablo', 'Marta_gamer', 'xXDarkXx', 'Lucía', 'Andrés', 'NoobMaster', 'Sofi', 'Kevin2009',
+  'VenezolanoRandom7', 'ElCapibaraFeliz', 'Dani_MX', 'NoSoyUnBot', 'Valeria.art', 'Toño_04', 'GatoConSueño', 'Ari'];
+// Las de abajo están inspiradas en los comentarios reales del canal (octubre 2026): saludos,
+// ánimos, bromas cortas, la voz, Xiaro (en broma y en serio) y peticiones de temas.
 const FRASES = ['hola Lara!!', '¿Qué juego vas a jugar hoy?', 'jajaja', 'Lara, ¿cuál es tu comida favorita?',
   'primera vez que vengo, saludos desde México', 'me encanta tu voz', 'xd', '¿Sabes qué es un agujero negro?',
   'Lara ¿te gusta Minecraft?', 'buenas noches a todos', 'qué guapa estás hoy', '¿Cuántos años tienes?',
-  'hoy tengo examen de mates 😭', 'saludos!!', '¿Lara puedes cantar algo?', 'gg'];
+  'hoy tengo examen de mates 😭', 'saludos!!', '¿Lara puedes cantar algo?', 'gg',
+  'llegué temprano 🗣️', 'seee', 'que onda Lara', '¿De qué país eres?', 'saludos desde Venezuela 🇻🇪',
+  'pan con café ☕', 'XD', 'chat, ¿la apoyamos? 🔥', 'le veo potencial al canal, sigue así',
+  'buen vídeo el de los hongos, genia', '¿tu voz es real o es inteligencia artificial?',
+  '¿por qué tienes la voz de Alya?', 'eres Xiaro', 'la versión buena de Xiaro jaja',
+  'te pareces mucho a Xiaro, ¿por qué?', 'Lara, ¿te gusta la astronomía? a mí me encanta el espacio',
+  'haz un vídeo de Cicada 3301 porfa', '¿qué opinas de los hongos zombi?', 'que ganas de comer un capibara jsjs',
+  'perfecto para poner mientras descanso', 'quiero que seas famosa', 'ya me suscribí, ojalá te vaya bien',
+  '¿eres una persona o una IA?', '¿quién te creó?', 'me espanté con lo de la hormiga 😰', 'ono :v',
+  'yo me uniría como miembro pero no hay money 😢', '¿cuál es tu libro favorito?', 'hola desde España',
+  'Lara, ¿qué es lo que más te gusta hacer?', 'jsjsjs', '¿cada cuánto subes vídeos?', 'te amo Lara ❤',
+  '¿te puedo hacer un fanart?', 'la edición de tus vídeos es cine'];
+// En cada tanda escriben personas DISTINTAS, y cada una espera al menos 25 s antes de
+// volver a escribir (antes un mismo bot soltaba varias frases sin relación seguidas y
+// Lara las recibía pegadas en un solo mensaje).
+const ultimoBot = {};
 setInterval(() => {
   if (!$('bots').checked || !directoActivo) return;
-  const n = 1 + Math.floor(Math.random() * 3);
-  for (let i = 0; i < n; i++) {
-    api('directo/chat', {
-      autor: BOTS[Math.floor(Math.random() * BOTS.length)],
-      texto: FRASES[Math.floor(Math.random() * FRASES.length)],
-    }).catch(() => {});
+  const ahora = Date.now();
+  const libres = BOTS.filter((b) => ahora - (ultimoBot[b] || 0) > 25000).sort(() => Math.random() - 0.5);
+  const n = Math.min(libres.length, 1 + Math.floor(Math.random() * 3));
+  for (const autor of libres.slice(0, n)) {
+    ultimoBot[autor] = ahora;
+    api('directo/chat', { autor, texto: FRASES[Math.floor(Math.random() * FRASES.length)] }).catch(() => {});
   }
 }, 6000);
 

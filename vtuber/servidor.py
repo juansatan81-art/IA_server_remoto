@@ -16,7 +16,7 @@ API HTTP (para que cualquier programa o IA controle el avatar):
 
 Modo directo (Lara streamea sola: elige a quién responder, habla cuando el chat calla...):
     POST /api/directo/iniciar   {"plan": "hoy jugamos a Minecraft..."}
-    POST /api/directo/terminar  {}            guarda un resumen para recordarlo
+    POST /api/directo/terminar  {}            guarda un resumen para recordarlo ({"guardar": false}: sin guardar)
     POST /api/directo/chat      {"autor": "Pablo", "texto": "...", "tipo": "mensaje|superchat|miembro",
                                  "cantidad": "5 €"}   un mensaje del chat (YouTube u otro programa)
     POST /api/directo/panico    {}            calla, vacía la cola y cambia de tema
@@ -460,9 +460,11 @@ def crear_app(vt: VTuber):
         return web.json_response({"ok": True, "directo": vt.directo.estado()})
 
     @rutas.post("/api/directo/terminar")
-    async def directo_terminar(_):
+    async def directo_terminar(req):
+        # {"guardar": false} termina sin guardar el recuerdo (para las pruebas)
+        datos = await req.json() if req.can_read_body else {}
         await vt.youtube.desconectar()
-        resumen = await vt.directo.terminar()
+        resumen = await vt.directo.terminar(guardar=bool(datos.get("guardar", True)))
         return web.json_response({"ok": True, "resumen": resumen})
 
     @rutas.post("/api/directo/chat")
