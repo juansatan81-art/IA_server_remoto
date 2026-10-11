@@ -41,6 +41,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+import aiohttp
 from aiohttp import WSMsgType, web
 
 import filtros
@@ -48,6 +49,7 @@ from cerebro import Cerebro
 from directo import Directo
 from emociones import EMOCIONES, dividir, normalizar
 from glosario import Glosario
+from videos import Videos
 from memoria import Memoria
 from voz import Voz
 from youtube import YouTube
@@ -72,6 +74,9 @@ class VTuber:
         self.ayudante = filtros.Ayudante(cfg.get("ayudante", {}), self.cerebro.base_ollama)
         self.memoria = Memoria(MEMORIA)
         self.glosario = Glosario(MEMORIA)
+        self.obs = set()                  # avatares abiertos fuera del panel (OBS, otra pestaña)
+        self._ia = (0.0, {"ok": False, "detalle": "comprobando…"})   # caché del estado de Ollama
+        self.videos = Videos(MEMORIA)   # fichas de los vídeos publicados (memoria/videos.json)
         self._por_aprender = []       # búsquedas de las que el glosario puede sacar un término
         self.cerebro.al_buscar = lambda consulta, resultado: self._por_aprender.append((consulta, resultado))
         self.fallos_voz = 0
@@ -105,6 +110,26 @@ class VTuber:
         log.info("[%s] %s", quien, texto)
         self.directo.apuntar(quien, texto)
         await self._enviar(self.paneles, {"tipo": "registro", "quien": quien, "texto": texto})
+
+    async def estado_ia(self):
+        """¿Responde Ollama y tiene el modelo del cerebro? (se mira como mucho cada 10 s)"""
+        cuando, valor = self._ia
+        if time.monotonic() - cuando < 10:
+            return valor
+        try:
+            tiempo = aiohttp.ClientTimeout(total=2)
+            async with aiohttp.ClientSession(timeout=tiempo) as ses:
+                async with ses.get(f"{self.cerebro.base_ollama}/api/tags") as r:
+                    nombres = [m.get("name", "") for m in (await r.json()).get("models", [])]
+            modelo = self.cerebro.modelo
+            if any(n == modelo or n.split(":")[0] == modelo for n in nombres):
+                valor = {"ok": True, "detalle": modelo}
+            else:
+                valor = {"ok": False, "detalle": f"falta el modelo {modelo} (ollama pull {modelo})"}
+        except Exception:
+            valor = {"ok": False, "detalle": "Ollama no responde: ábrelo desde el menú Inicio"}
+        self._ia = (time.monotonic(), valor)
+        return valor
 
     # ---------------------------------------------------------------- ¿está hablando?
     def hablando(self):
@@ -187,7 +212,7 @@ class VTuber:
                     await self.decir(random.choice(RELLENOS))
 
             self.modelos_descargados = False
-            nota = " ".join(p for p in (nota, self.glosario.nota(mensaje)) if p)
+            nota = " ".join(p for p in (nota, self.glosario.nota(mensaje), self.videos.nota(mensaje)) if p)
             try:
                 respuesta = await self.cerebro.responder(mensaje, usuario, imagenes, aviso, nota)
             except Exception as err:
@@ -290,7 +315,18 @@ def apagar_al_cerrar_ventana(vt):
 
 # -------------------------------------------------------------------- rutas
 def crear_app(vt: VTuber):
-    app = web.Application(client_max_size=32 * 1024 * 1024)   # caben fotos y capturas
+    @web.middleware
+    async def sin_cache_vieja(req, handler):
+        """Las páginas, el código y piezas.json se comprueban siempre (no-cache = el navegador
+        pregunta si hay versión nueva; si no la hay, usa la suya). Sin esto, OBS y el
+        navegador seguían con el panel o el avatar viejos después de actualizar."""
+        resp = await handler(req)
+        if req.path in ("/panel", "/avatar") or req.path.endswith((".js", ".html", ".json")):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+    app = web.Application(client_max_size=32 * 1024 * 1024,   # caben fotos y capturas
+                          middlewares=[sin_cache_vieja])
     rutas = web.RouteTableDef()
 
     async def json_de(req):
@@ -317,6 +353,9 @@ def crear_app(vt: VTuber):
         await ws.prepare(req)
         grupo = vt.paneles if req.query.get("rol") == "panel" else vt.avatares
         grupo.add(ws)
+        de_obs = grupo is vt.avatares and req.query.get("vista") != "panel"   # la vista previa no es OBS
+        if de_obs:
+            vt.obs.add(ws)
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.ERROR:
@@ -335,6 +374,7 @@ def crear_app(vt: VTuber):
                         await vt.aviso_avatar(str(datos.get("texto", ""))[:300])
         finally:
             grupo.discard(ws)
+            vt.obs.discard(ws)
         return ws
 
     @rutas.get("/api/estado")
@@ -345,7 +385,10 @@ def crear_app(vt: VTuber):
             "avatares_conectados": len(vt.avatares),
             "cerebro": {"url": c.url, "modelo": c.modelo, "mensajes_en_memoria": len(c.historial),
                         "internet": c.internet},
-            "voz": vt.voz.voz,
+            "voz": vt.voz.descripcion,
+            "voz_ultima": vt.voz.ultimo,
+            "obs": len(vt.obs),
+            "ia": await vt.estado_ia(),
             "ayudante": vt.ayudante.modelo if vt.ayudante.disponible else "",
             "directo": vt.directo.estado(),
             "youtube": {"configurado": vt.youtube.configurado, "estado": vt.youtube.estado},
@@ -534,7 +577,7 @@ def main():
           f"\n  Cerebro:       {vt.cerebro.modelo} en {vt.cerebro.url}"
           f"\n  Ayudante:      {vt.ayudante.modelo or '(ninguno: solo reglas)'}"
           f"{' en el procesador' if vt.ayudante.modelo and vt.ayudante.en_procesador else ''}"
-          f"\n  Voz:           {vt.voz.voz}\n")
+          f"\n  Voz:           {vt.voz.descripcion}\n")
     try:
         web.run_app(crear_app(vt), host=host, port=puerto, print=None, access_log=None)
     except OSError as err:
