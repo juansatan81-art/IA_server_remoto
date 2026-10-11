@@ -3,34 +3,56 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Panel VTuber</title>
+<title>Panel de Lara</title>
 <style>
-  :root { --fondo: #f4f4f5; --tarjeta: #fff; --texto: #18181b; --suave: #71717a; --borde: #e4e4e7; --acento: #18181b; --error: #b91c1c; --aviso: #b45309; --ok: #15803d; }
+  :root { --fondo: #f4f4f5; --tarjeta: #fff; --texto: #18181b; --suave: #71717a; --borde: #e4e4e7; --acento: #18181b;
+          --menta: #23A581; --error: #b91c1c; --aviso: #b45309; --ok: #15803d; --apagado: #a1a1aa; }
   @media (prefers-color-scheme: dark) {
-    :root { --fondo: #111113; --tarjeta: #1c1c1f; --texto: #f4f4f5; --suave: #a1a1aa; --borde: #2e2e33; --acento: #f4f4f5; --error: #f87171; --aviso: #fbbf24; --ok: #4ade80; }
+    :root { --fondo: #111113; --tarjeta: #1c1c1f; --texto: #f4f4f5; --suave: #a1a1aa; --borde: #2e2e33; --acento: #f4f4f5;
+            --error: #f87171; --aviso: #fbbf24; --ok: #4ade80; --apagado: #52525b; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.45 system-ui, sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr 340px; }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  /* barra de arriba: semáforos, emoción y PÁNICO, siempre a la vista */
+  #barra { position: sticky; top: 0; z-index: 5; background: var(--tarjeta); border-bottom: 1px solid var(--borde);
+           display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 16px; }
+  #barra h1 { font-size: 18px; margin: 0; }
+  .semaforos { display: flex; flex-wrap: wrap; gap: 6px 14px; flex: 1; }
+  .luz { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; white-space: nowrap; }
+  .luz::before { content: ""; width: 11px; height: 11px; border-radius: 50%; background: var(--apagado); }
+  .luz.verde::before { background: var(--ok); } .luz.ambar::before { background: var(--aviso); } .luz.rojo::before { background: var(--error); }
+  #ahora { font-size: 14px; }
+  #emocionActual { display: inline-block; padding: 1px 10px; border-radius: 999px; background: var(--acento); color: var(--tarjeta); }
+  #diciendo { color: var(--suave); }
+  button.panico { background: var(--error); border-color: var(--error); color: #fff; font-weight: 700; padding: 10px 20px; font-size: 16px; }
+
+  /* pestañas */
+  nav { display: flex; gap: 4px; padding: 0 16px; max-width: 1180px; margin: 12px auto 0; }
+  nav button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; font-size: 16px; font-weight: 600;
+               padding: 8px 14px; color: var(--suave); }
+  nav button[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--menta); }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 12px 16px 24px; display: grid; gap: 16px; grid-template-columns: 1fr 380px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } #lateral { position: static !important; } }
+  .pestana { display: grid; gap: 16px; } .pestana[hidden] { display: none; }
+  #lateral { position: sticky; top: 70px; display: grid; gap: 16px; }
   section { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 14px; }
-  h1 { font-size: 18px; margin: 0 0 4px; } h2 { font-size: 14px; margin: 0 0 10px; color: var(--suave); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: var(--suave); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
   #vista { width: 100%; aspect-ratio: 1300 / 1140; border: 0; border-radius: 10px; background: repeating-conic-gradient(#0000 0 25%, #8882 0 50%) 0 0 / 24px 24px; }
-  #registro { height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  #registro { height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
   .linea { padding: 6px 10px; border-radius: 10px; background: var(--fondo); white-space: pre-wrap; }
   .linea b { font-size: 12px; color: var(--suave); display: block; }
   .linea.error { color: var(--error); }
   form { display: flex; gap: 8px; margin-top: 8px; }
   input[type=text] { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); font: inherit; }
   button { padding: 9px 14px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); font: inherit; cursor: pointer; }
-  button.principal { background: var(--acento); color: var(--tarjeta); border-color: var(--acento); }
+  button.principal { background: var(--menta); color: #fff; border-color: var(--menta); font-weight: 600; }
+  button.grande { padding: 12px 22px; font-size: 16px; }
   button:disabled { opacity: .5; cursor: wait; }
   #emociones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .fila { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   #estado { color: var(--suave); font-size: 13px; }
-  #ahora { margin-top: 8px; font-size: 15px; }
-  #emocionActual { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--acento); color: var(--tarjeta); }
-  #diciendo { color: var(--suave); }
   code { font-size: 13px; }
   #adjuntos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
   #adjuntos:empty { display: none; }
@@ -39,15 +61,14 @@
   .adjunto button { position: absolute; top: 2px; right: 2px; padding: 0 6px; font-size: 12px; line-height: 18px; }
   #pantalla { width: 100%; border-radius: 10px; margin-top: 8px; display: none; background: #000; }
   #pantalla.activa { display: block; }
-  .nota { font-size: 13px; color: var(--suave); margin: 4px 0 0; }
+  .nota { font-size: 13px; color: var(--suave); margin: 6px 0 0; }
   .linea.pensamiento { font-style: italic; color: var(--suave); border-left: 3px solid var(--borde); }
   .linea.filtro { color: var(--aviso); }
   textarea, select { width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--borde);
     background: var(--fondo); color: var(--texto); font: inherit; }
   textarea { resize: vertical; min-height: 54px; }
   select { width: auto; }
-  button.panico { background: var(--error); border-color: var(--error); color: #fff; font-weight: 700; }
-  #estadoDirecto { font-size: 13px; color: var(--suave); margin-top: 8px; }
+  #estadoDirecto { font-size: 14px; color: var(--suave); margin-top: 10px; }
   #estadoDirecto b { color: var(--texto); }
   .encendido { color: var(--ok) !important; }
   .termino { border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
@@ -62,107 +83,148 @@
 </style>
 </head>
 <body>
-<main>
-  <div style="display:grid; gap:16px">
-    <section>
-      <h1>Panel del VTuber</h1>
-      <div id="estado">Conectando…</div>
-      <div id="ahora">Emoción: <b id="emocionActual">neutral</b> <span id="diciendo"></span></div>
-    </section>
-    <section>
-      <h2>Modo directo</h2>
-      <textarea id="plan" placeholder="Plan del directo (opcional): hoy jugamos a Minecraft, construimos una casa y hablamos de agujeros negros…"></textarea>
-      <div class="fila">
-        <button class="principal" id="iniciarDirecto">Empezar directo</button>
-        <button id="terminarDirecto" disabled>Terminar y guardar recuerdo</button>
-        <button class="panico" id="panico" title="Calla al momento, vacía la cola y cambia de tema">PÁNICO</button>
-      </div>
-      <div id="estadoDirecto">Apagado. Con el directo encendido, Lara elige a quién responder del chat y habla sola cuando el chat está tranquilo.</div>
-      <h2 style="margin-top:14px">Chat de prueba</h2>
-      <form id="formSimular">
-        <input id="simAutor" type="text" placeholder="Nombre" style="flex:0 0 120px" autocomplete="off">
-        <input id="simTexto" type="text" placeholder="Mensaje como si fueras del chat" autocomplete="off">
-        <select id="simTipo"><option value="mensaje">Mensaje</option><option value="superchat">Super Chat</option><option value="miembro">Nuevo miembro</option></select>
-        <button id="enviarSimular">Al chat</button>
-      </form>
-      <div class="fila">
-        <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="bots"> Simular espectadores (mensajes automáticos para probar)</label>
-      </div>
-      <h2 style="margin-top:14px">YouTube</h2>
-      <form id="formYoutube">
-        <input id="ytVideo" type="text" placeholder="Enlace del directo (vacío = el que emita tu canal)" autocomplete="off">
-        <button id="ytConectar">Conectar</button>
-        <button type="button" id="ytDesconectar">Desconectar</button>
-      </form>
-      <p class="nota" id="ytEstado">Necesita la clave de la API en <code>config.local.json</code> (mira el README).</p>
-    </section>
-    <section>
-      <h2>Conversación con la IA</h2>
-      <div id="registro"></div>
-      <form id="formChat">
-        <input id="chat" type="text" placeholder="Escríbele algo a la IA…" autocomplete="off">
-        <button type="button" id="adjuntar" title="Adjuntar imagen">Imagen</button>
-        <input type="file" id="archivo" accept="image/*" multiple hidden>
-        <button class="principal" id="enviarChat">Enviar</button>
-      </form>
-      <div id="adjuntos"></div>
-      <form id="formDecir">
-        <input id="decir" type="text" placeholder="Que diga exactamente esto (admite [feliz], [triste]…)" autocomplete="off">
-        <button id="enviarDecir">Decir</button>
-      </form>
-      <div class="fila">
-        <button id="parar">Callar</button>
-        <button id="olvidar">Borrar memoria</button>
-      </div>
-    </section>
+<header id="barra">
+  <h1>Lara</h1>
+  <div class="semaforos" aria-live="polite">
+    <span class="luz" id="luzIa" title="El cerebro (Ollama y su modelo)">IA</span>
+    <span class="luz" id="luzVoz" title="Qué voz está saliendo">Voz</span>
+    <span class="luz" id="luzObs" title="Si OBS (u otra pestaña) tiene abierto el avatar">OBS</span>
+    <span class="luz" id="luzYt" title="Chat de YouTube">YouTube</span>
   </div>
-  <div style="display:grid; gap:16px; align-content:start">
+  <div id="ahora">Cara: <b id="emocionActual">neutral</b> <span id="diciendo"></span></div>
+  <button class="panico" id="panico" title="Calla al momento, vacía la cola y cambia de tema">PÁNICO</button>
+</header>
+
+<nav role="tablist">
+  <button role="tab" data-pestana="directo" aria-selected="true">En directo</button>
+  <button role="tab" data-pestana="probar" aria-selected="false">Probar</button>
+  <button role="tab" data-pestana="ajustes" aria-selected="false">Ajustes</button>
+</nav>
+
+<main>
+  <div>
+    <!-- ======================= EN DIRECTO ======================= -->
+    <div class="pestana" id="pestana-directo">
+      <section>
+        <h2>Directo</h2>
+        <textarea id="plan" placeholder="De qué va a ir el directo (opcional): hoy jugamos a Minecraft y hablamos de agujeros negros…"></textarea>
+        <div class="fila">
+          <button class="principal grande" id="iniciarDirecto">▶ Empezar directo</button>
+          <button class="grande" id="terminarDirecto" disabled>■ Terminar y guardar recuerdo</button>
+        </div>
+        <div id="estadoDirecto">Apagado. Con el directo encendido, Lara elige a quién responder del chat y habla sola cuando el chat está tranquilo.</div>
+      </section>
+      <section>
+        <h2>Hablar con Lara</h2>
+        <div id="registro"></div>
+        <form id="formChat">
+          <input id="chat" type="text" placeholder="Escríbele algo a Lara…" autocomplete="off">
+          <button type="button" id="adjuntar" title="Adjuntar una imagen">📎 Imagen</button>
+          <input type="file" id="archivo" accept="image/*" multiple hidden>
+          <button class="principal" id="enviarChat">Enviar</button>
+        </form>
+        <div id="adjuntos"></div>
+        <div class="fila"><button id="parar">🤫 Callar</button></div>
+      </section>
+      <section>
+        <h2>Su cara</h2>
+        <div id="emociones"></div>
+      </section>
+    </div>
+
+    <!-- ======================= PROBAR ======================= -->
+    <div class="pestana" id="pestana-probar" hidden>
+      <section>
+        <h2>Que diga una frase exacta</h2>
+        <form id="formDecir">
+          <input id="decir" type="text" placeholder="Por ejemplo: [feliz] ¡Hola a todos! [avergonzada] Perdón…" autocomplete="off">
+          <button class="principal" id="enviarDecir">Decir</button>
+        </form>
+        <p class="nota">Entre corchetes van las caras: [feliz], [triste], [sorprendida], [avergonzada], [pensativa]…</p>
+      </section>
+      <section>
+        <h2>Chat de prueba</h2>
+        <p class="nota" style="margin-top:0">Escribe como si fueras alguien del chat de YouTube, para ver cómo reacciona en un directo.</p>
+        <form id="formSimular">
+          <input id="simAutor" type="text" placeholder="Nombre" style="flex:0 0 120px" autocomplete="off">
+          <input id="simTexto" type="text" placeholder="Mensaje del chat" autocomplete="off">
+          <select id="simTipo"><option value="mensaje">Mensaje</option><option value="superchat">Super Chat</option><option value="miembro">Nuevo miembro</option></select>
+          <button id="enviarSimular">Al chat</button>
+        </form>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-top:10px">
+          <input type="checkbox" id="bots"> Simular espectadores (mensajes automáticos)</label>
+      </section>
+      <section>
+        <h2>Mover la cabeza</h2>
+        <div class="fila" style="margin-top:0">
+          <button data-cabeza="-25,0,-0.8">Ladear ←</button>
+          <button data-cabeza="0,0,0">Centro</button>
+          <button data-cabeza="25,0,0.8">Ladear →</button>
+          <button data-cabeza="0,18,0">Agachar</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- ======================= AJUSTES ======================= -->
+    <div class="pestana" id="pestana-ajustes" hidden>
+      <section>
+        <h2>Chat de YouTube</h2>
+        <form id="formYoutube">
+          <input id="ytVideo" type="text" placeholder="Enlace del directo (vacío = el que emita tu canal)" autocomplete="off">
+          <button id="ytConectar" class="principal">Conectar</button>
+          <button type="button" id="ytDesconectar">Desconectar</button>
+        </form>
+        <p class="nota" id="ytEstado">Necesita la clave de la API en <code>config.local.json</code> (mira el README).</p>
+      </section>
+      <section>
+        <h2>Lo que ve Lara</h2>
+        <div class="fila" style="margin-top:0">
+          <button id="compartir">🖥 Compartir pantalla</button>
+          <button id="comentar" disabled>¿Qué ves?</button>
+        </div>
+        <video id="pantalla" muted playsinline></video>
+        <p class="nota">Mientras compartes la pantalla (o una ventana, como un juego), cada mensaje que le escribas
+          lleva una captura. También puedes adjuntar fotos o pegarlas con Ctrl+V.</p>
+      </section>
+      <section>
+        <h2>Glosario de memes y palabras</h2>
+        <p class="nota" style="margin-top:0">Lo que Lara ya sabe sin buscarlo. Cuando busca algo nuevo aparece aquí
+          <b>pendiente</b>: corrige el significado si hace falta y apruébalo.</p>
+        <div id="pendientes"></div>
+        <form id="formTermino">
+          <input id="nuevoTermino" type="text" placeholder="Añadir palabra" autocomplete="off" style="flex:0 0 40%">
+          <input id="nuevoSignificado" type="text" placeholder="Qué significa" autocomplete="off">
+          <button id="anadirTermino">+</button>
+        </form>
+        <details>
+          <summary id="resumenAprobados">Aprobados</summary>
+          <div id="aprobados"></div>
+        </details>
+      </section>
+      <section>
+        <h2>Memoria</h2>
+        <button id="olvidar">Borrar la memoria de esta conversación</button>
+        <p class="nota">Lara olvida lo hablado en esta sesión. Los recuerdos de directos anteriores y las fichas de los vídeos no se borran.</p>
+      </section>
+      <section>
+        <h2>Detalles técnicos</h2>
+        <div id="estado">Conectando…</div>
+      </section>
+    </div>
+  </div>
+
+  <!-- vista previa: siempre visible -->
+  <aside id="lateral">
     <section>
       <h2>Vista previa</h2>
-      <iframe id="vista" src="/avatar?subtitulos=1" title="Avatar"></iframe>
+      <iframe id="vista" src="/avatar?subtitulos=1&vista=panel" title="Avatar"></iframe>
       <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:14px">
-        <input type="checkbox" id="sonidoVista" checked> Sonido en la vista previa
-      </label>
-      <p style="font-size:13px;color:var(--suave);margin:4px 0 0">Si la tienes abierta también en OBS u otra pestaña, desmárcalo para que no se oiga con eco.</p>
-      <p id="nota" style="font-size:13px;color:var(--suave);margin:8px 0 0">En OBS añade una <b>fuente de navegador</b> con <code>/avatar</code>. Si no oyes nada aquí, haz clic sobre la vista previa.</p>
+        <input type="checkbox" id="sonidoVista" checked> Sonido aquí</label>
+      <p class="nota">Rueda o pellizco: zoom · arrastrar: mover · doble clic: volver al busto · tecla E: cuerpo entero.</p>
+      <p class="nota" id="nota">Si también la tienes en OBS, quita el sonido de aquí para que no haya eco.
+        En OBS: fuente de navegador <code>/avatar</code>, 1300 × 1140.</p>
     </section>
-    <section>
-      <h2>Lo que ve la IA</h2>
-      <div class="fila" style="margin-top:0">
-        <button id="compartir">Compartir pantalla</button>
-        <button id="comentar" disabled>¿Qué ves?</button>
-      </div>
-      <video id="pantalla" muted playsinline></video>
-      <p class="nota">Mientras compartes la pantalla (o una ventana, como un juego), cada mensaje
-        que le escribas lleva una captura. También puedes adjuntar fotos o pegarlas con Ctrl+V.</p>
-    </section>
-    <section>
-      <h2>Glosario</h2>
-      <p class="nota" style="margin-top:0">Palabras y memes que Lara conoce sin buscarlos. Cuando busca uno nuevo,
-        aparece aquí <b>pendiente</b>: corrige el significado si hace falta y apruébalo.</p>
-      <div id="pendientes"></div>
-      <form id="formTermino">
-        <input id="nuevoTermino" type="text" placeholder="Añadir término" autocomplete="off" style="flex:0 0 40%">
-        <input id="nuevoSignificado" type="text" placeholder="Qué significa" autocomplete="off">
-        <button id="anadirTermino">+</button>
-      </form>
-      <details>
-        <summary id="resumenAprobados">Aprobados</summary>
-        <div id="aprobados"></div>
-      </details>
-    </section>
-    <section>
-      <h2>Emociones</h2>
-      <div id="emociones"></div>
-      <h2 style="margin-top:14px">Cabeza</h2>
-      <div class="fila">
-        <button data-cabeza="-25,0,-0.8">Ladear ←</button>
-        <button data-cabeza="0,0,0">Centro</button>
-        <button data-cabeza="25,0,0.8">Ladear →</button>
-        <button data-cabeza="0,18,0">Agachar</button>
-      </div>
-    </section>
-  </div>
+  </aside>
 </main>
 <script src="panel.js"></script>
 </body>

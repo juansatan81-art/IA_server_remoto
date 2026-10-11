@@ -14,6 +14,7 @@
  */
 
 let W = 1300, H = 1140;
+let HT = 1140;            // alto con el cuerpo entero (piernas y melena completa)
 let BUSTO = { escala: 1, dx: 0, dy: 0 };
 let PEGATINAS = {};
 let PECHO = { arriba: 0, abajo: 1 };
@@ -22,15 +23,19 @@ let CORTE = 607;          // por encima, el pelo largo se mueve rígido con la c
 let CUERPO_ARRIBA = 595;
 const EJE = 631.5;        // eje de simetría de la cara (busto)
 const FRANJA = 2;
-// Cómo se comporta el pecho. Por defecto "suave"; para comparar:
-//   ?pecho=gelatina (más exagerado)   ?pecho=firme (sin deformarse)
+// Cómo se comporta el pecho. Por defecto "sujeto"; para comparar:
+//   ?pecho=suave (el de antes)  ?pecho=gelatina (más exagerado)  ?pecho=firme (sin deformarse)
+// "sujeto": los bordes (arriba, la cintura y los lados) no se mueven y solo bota el centro,
+// sin estrecharse. En "suave" lo que más se movía era el borde de abajo, que se separaba
+// de la cintura y dejaba ver el corte.
 const ESTILOS_PECHO = {
   //          rigidez freno ganancia máx  tirón retraso(s) aplastar
+  sujeto: { rigidez: 60, freno: 3.2, ganancia: 2.2, max: 9, tiron: 0.35, retraso: 0, aplastar: 0, sujeto: true },
   gelatina: { rigidez: 38, freno: 1.3, ganancia: 3.6, max: 18, tiron: 0.7, retraso: 0.15, aplastar: 0.0018 },
   suave: { rigidez: 55, freno: 2.4, ganancia: 2.4, max: 12, tiron: 0.4, retraso: 0.09, aplastar: 0.0015 },
   firme: { rigidez: 70, freno: 4.5, ganancia: 2.4, max: 12, tiron: 0.4, retraso: 0, aplastar: 0 },
 };
-const ESTILO_PECHO = ESTILOS_PECHO[new URLSearchParams(location.search).get('pecho')] || ESTILOS_PECHO.suave;
+const ESTILO_PECHO = ESTILOS_PECHO[new URLSearchParams(location.search).get('pecho')] || ESTILOS_PECHO.sujeto;
 
 const lienzo = document.getElementById('lienzo');
 const ctx = lienzo.getContext('2d');
@@ -275,16 +280,22 @@ function dibujarPeloLargo(p) {
   transformarCabeza(p);
   ctx.drawImage(capas.pelo_largo, 0, 0, W, CORTE + 2, 0, 0, W, CORTE + 2);
   ctx.restore();
-  // parte baja: franjas que se doblan y se balancean
-  for (let y = CORTE; y < H; y += FRANJA) {
+  // parte baja: franjas que se doblan y se balancean. Por debajo del busto (H) sigue la
+  // melena entera (pelo_largo_abajo): cuanto más larga, más retraso y más balanceo,
+  // y empieza en 0 justo en H para que no haya corte en la cintura
+  for (let y = CORTE; y < HT; y += FRANJA) {
     const m = y + FRANJA / 2;
+    const img = y < H ? capas.pelo_largo : capas.pelo_largo_abajo;
+    if (!img) break;
     const libre = suave(CORTE, H, m);
     const peso = 1 - libre * 0.88;
     const viento = 2.5 * Math.sin(t * 1.3 - m * 0.012);
-    const dx = p.x * peso + (anim.pelo - p.x) * libre * 1.3 + viento * libre;
+    let dx = p.x * peso + (anim.pelo - p.x) * libre * 1.3 + viento * libre;
+    const largo = HT > H ? suave(H, HT, m) : 0;          // 0 en la cintura, 1 en las puntas
+    dx += largo * (5 * Math.sin(t * 1.1 - m * 0.006) + (anim.pelo - p.x) * 0.9);
     const dy = p.y * peso;
     if (!ritmo.fuerza) {
-      ctx.drawImage(capas.pelo_largo, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
+      ctx.drawImage(img, 0, y, W, FRANJA, dx, y + dy, W, FRANJA + 1);
       continue;
     }
     // al compás, cada lado del pelo se abre y se cierra (los mechones se ensanchan)
@@ -349,6 +360,16 @@ async function ponerBrazos(nombre) {
 
 function dibujarCuerpo(p) {
   franjasCuerpo(poseBrazos ? capas.cuerpo_sin_brazos : capas.cuerpo, p);
+  // falda, piernas y (con la pose normal) manos: se mueven como la última fila del busto,
+  // que es donde se unen; las piernas quedan plantadas, sin inclinarse
+  if (capas.cuerpo_abajo) {
+    const c = anim.cuerpo;
+    ctx.save();
+    ctx.translate(c.x * 0.06, c.y * 0.06 * 0.8);
+    ctx.drawImage(capas.cuerpo_abajo, 0, 0);
+    if (!poseBrazos && capas.brazos_abajo) ctx.drawImage(capas.brazos_abajo, 0, 0);
+    ctx.restore();
+  }
   // el pecho rebota respecto al torso: diferencia entre su muelle y el del torso
   const c = anim.cuerpo, q = anim.pecho;
   const e = ESTILO_PECHO;
@@ -361,6 +382,13 @@ function dibujarCuerpo(p) {
   const arriba = PECHO.arriba, abajo = PECHO.abajo;
   franjasCuerpo(capas.pecho, p, (m) => {
     if (m < arriba - 4 || m > abajo + 4) return null;
+    if (e.sujeto) {
+      // bulto sujeto por los bordes: 0 arriba y abajo, máximo un poco por debajo de la
+      // mitad; las filas vecinas casi no se separan, así no se abren rendijas
+      const u = limitar((m - arriba) / (abajo - arriba));
+      const k = Math.pow(Math.sin(Math.PI * Math.pow(u, 0.8)), 1.6);
+      return { dx: rebX * k * 0.6, dy: rebY * k, sx: 1 };
+    }
     if (!e.retraso) {
       // firme: arriba, donde se une al torso, no se mueve; el rebote crece hasta la mitad
       const k = suave(arriba, (arriba + abajo) / 2, m);
@@ -652,7 +680,7 @@ function dibujarChispas() {
 }
 
 function dibujar(p) {
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, HT);
   dibujarPeloLargo(p);
 
   // el pelo de la cabeza va detrás del cuerpo (los hombros y el cuello lo tapan)
@@ -879,26 +907,30 @@ function manejar(m) {
 function conectar() {
   if (location.protocol === 'file:') return;
   const esquema = location.protocol === 'https:' ? 'wss' : 'ws';
-  socket = new WebSocket(`${esquema}://${location.host}/ws?rol=avatar`);
+  // la vista previa del panel se identifica, para que el panel no la cuente como OBS
+  const vista = parametros.get('vista') === 'panel' ? '&vista=panel' : '';
+  socket = new WebSocket(`${esquema}://${location.host}/ws?rol=avatar${vista}`);
   socket.onmessage = (e) => { try { manejar(JSON.parse(e.data)); } catch (err) { console.error(err); } };
   socket.onclose = () => setTimeout(conectar, 1500);
 }
 
 // ---------------------------------------------------------------- arranque
 async function iniciar() {
-  const modelo = await (await fetch('capas/piezas.json')).json();
+  const modelo = await (await fetch('capas/piezas.json', { cache: 'no-cache' })).json();   // sin copia vieja (OBS guarda caché)
   W = modelo.lienzo.ancho; H = modelo.lienzo.alto;
-  lienzo.width = W; lienzo.height = H;
+  HT = modelo.cuerpo_entero ? modelo.cuerpo_entero.alto : H;
+  lienzo.width = W; lienzo.height = HT;
   BUSTO = modelo.busto_a_lienzo;
   PEGATINAS = modelo.pegatinas;
   PECHO = modelo.pecho;
   CUELLO_Y = aLienzoY(760); CORTE = Math.round(aLienzoY(756));
   CUERPO_ARRIBA = modelo.cuerpo_arriba ?? Math.round(aLienzoY(742));
   const nombres = ['pelo_largo', 'cuerpo', 'pecho', 'pelo_cabeza', 'cara', 'ojos_blanco', 'flequillo',
-    ...Object.keys(PEGATINAS)];
+    ...Object.keys(PEGATINAS), ...(modelo.cuerpo_entero ? modelo.cuerpo_entero.piezas : [])];
   const imagenes = await Promise.all(nombres.map((n) => cargarImagen(`capas/${n}.png`)));
   capas = Object.fromEntries(nombres.map((n, i) => [n, imagenes[i]]));
   window.avatar.listo = true;
+  if (typeof camara !== 'undefined') camara.iniciar(W, H, HT);   // sin camara.js (página vieja en caché) se ve como antes
 
   if (parametros.get('fondo')) document.body.style.background = parametros.get('fondo');
   if (parametros.get('emocion')) ponerEmocion(parametros.get('emocion'));

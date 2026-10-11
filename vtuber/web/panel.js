@@ -171,6 +171,7 @@ async function cargarEstado() {
       + ` · Filtros: ${e.ayudante ? `reglas + ${e.ayudante}` : 'solo reglas'}`
       + ` · Voz: ${e.voz} · Avatares conectados: ${e.avatares_conectados}`;
     pintarDirecto(e.directo, e.youtube);
+    pintarSemaforos(e);
     if (!$('emociones').children.length) {
       for (const nombre of e.emociones) {
         const b = document.createElement('button');
@@ -181,8 +182,48 @@ async function cargarEstado() {
     }
   } catch {
     $('estado').textContent = 'Sin conexión con el servidor';
+    pintarSemaforos(null);
   }
 }
+
+// semáforos de la barra de arriba: verde = bien, ámbar = funciona a medias, rojo = falla
+function luz(id, color, texto, detalle) {
+  const el = $(id);
+  el.className = `luz ${color}`;
+  el.textContent = texto;
+  el.title = detalle;
+}
+
+function pintarSemaforos(e) {
+  if (!e) {
+    for (const id of ['luzIa', 'luzVoz', 'luzObs', 'luzYt']) luz(id, 'rojo', $(id).textContent.split(':')[0], 'Sin conexión con el servidor: ¿está abierta la ventana negra de iniciar.bat?');
+    return;
+  }
+  luz('luzIa', e.ia.ok ? 'verde' : 'rojo', e.ia.ok ? 'IA lista' : 'IA: falla', e.ia.detalle);
+  const fish = e.voz.startsWith('Fish');
+  const voces = {
+    fish: ['verde', 'Voz: Fish', 'La última frase salió con la voz de Fish.'],
+    respaldo: ['ambar', 'Voz: respaldo', 'Fish no respondió y la última frase salió con la voz de respaldo (Ximena).'],
+    edge: ['verde', 'Voz lista', 'Voz de Microsoft (edge-tts).'],
+    error: ['rojo', 'Voz: falla', 'La última frase no tuvo voz. Mira el registro de la conversación.'],
+  };
+  const [c, txt, det] = voces[e.voz_ultima] || ['verde', fish ? 'Voz: Fish' : 'Voz lista', `Aún no ha hablado. Voz: ${e.voz}.`];
+  luz('luzVoz', c, txt, det);
+  luz('luzObs', e.obs > 0 ? 'verde' : '', e.obs > 0 ? 'OBS conectado' : 'OBS: no',
+    e.obs > 0 ? `Avatar abierto fuera del panel (${e.obs}).` : 'Ningún OBS u otra pestaña tiene abierto /avatar.');
+  const yt = e.youtube || {};
+  luz('luzYt', !yt.configurado ? '' : /conectad|leyendo|escuch/i.test(yt.estado || '') ? 'verde' : 'ambar',
+    !yt.configurado ? 'YouTube: sin clave' : 'YouTube', yt.configurado ? (yt.estado || '') : 'Falta la clave de la API en config.local.json.');
+}
+
+// pestañas (se recuerda la última abierta)
+function abrirPestana(nombre) {
+  document.querySelectorAll('nav [data-pestana]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.pestana === nombre)));
+  document.querySelectorAll('.pestana').forEach((p) => { p.hidden = p.id !== `pestana-${nombre}`; });
+  try { localStorage.setItem('pestanaPanel', nombre); } catch {}
+}
+document.querySelectorAll('nav [data-pestana]').forEach((b) => { b.onclick = () => abrirPestana(b.dataset.pestana); });
+try { const guardada = localStorage.getItem('pestanaPanel'); if (guardada) abrirPestana(guardada); } catch {}
 
 function conectar() {
   const esquema = location.protocol === 'https:' ? 'wss' : 'ws';

@@ -74,5 +74,13 @@
     "arriba": 663,
     "abajo": 1068
   },
-  "cuerpo_arriba": 526
+  "cuerpo_arriba": 526,
+  "cuerpo_entero": {
+    "alto": 2817,
+    "piezas": [
+      "pelo_largo_abajo",
+      "cuerpo_abajo",
+      "brazos_abajo"
+    ]
+  }
 }
