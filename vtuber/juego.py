@@ -65,6 +65,7 @@ class TresEnRaya:
         self.marcador = {"lara": 0, "rival": 0, "empates": 0}
         self.ultima_votacion = None   # {"casilla", "votos": {casilla: n}, "personas"}: se ve hasta la siguiente
         self._amenazas_lara = []      # casillas con las que Lara ganaba tras su última jugada
+        self.presentando = False      # Lara está explicando cómo se vota: aún no corre el reloj
         self._tarea = None
 
     # ------------------------------------------------------------ estado
@@ -104,10 +105,11 @@ class TresEnRaya:
         if self.turno == LARA:
             self._lanzar(self._mueve_lara(inicio=True))
         else:
+            self.presentando = self.rival == "chat"   # ya desde ahora: ningún voto arranca el reloj antes
             self._lanzar(self._anunciar_inicio())
 
     async def terminar(self):
-        self.activo, self.turno, self.cierre_votos = False, "", 0.0
+        self.activo, self.turno, self.cierre_votos, self.presentando = False, "", 0.0, False
         if self._tarea and not self._tarea.done():
             self._tarea.cancel()
         await self._avisar()
@@ -137,10 +139,10 @@ class TresEnRaya:
         return ""
 
     async def _tras_jugada_rival(self, casilla):
-        if not await self._comprobar_final():
+        if not await self._comprobar_final(casilla, RIVAL):
             await self._mueve_lara(ultima=casilla)
 
-    async def _comprobar_final(self):
+    async def _comprobar_final(self, casilla, ficha):
         r = ganador(self.tablero)
         if not r:
             return False
@@ -148,8 +150,11 @@ class TresEnRaya:
         self.marcador["lara" if r == LARA else "rival" if r == RIVAL else "empates"] += 1
         await self._avisar()
         quien = "el chat" if self.rival == "chat" else "tu rival"
+        # la última jugada se le dice tal cual: si no, se la inventa al comentar el final
+        ultima = (f"La última jugada fue tu O en la casilla {casilla}." if ficha == LARA else
+                  f"La última jugada fue la X de {quien} en la casilla {casilla}.")
         texto = {LARA: "Has GANADO tú la partida.", RIVAL: f"Ha ganado {quien}: has perdido la partida.",
-                 "empate": "La partida ha acabado en empate."}[r]
+                 "empate": "La partida ha acabado en empate."}[r] + " " + ultima
         siente = {LARA: "Te hace ilusión: feliz o un pelín presumida, sin burlarte de nadie.",
                   RIVAL: ("Te fastidia perder: un momento de enojada o triste (sin dramatizar) y luego "
                           "deportiva, con ganas de revancha."),
@@ -161,10 +166,19 @@ class TresEnRaya:
 
     async def _anunciar_inicio(self):
         if self.rival == "chat":
-            await self._hablar("(Nota para ti: empieza una partida de tres en raya contra el chat; "
-                               "empiezan ellos. Explica en una frase que voten escribiendo un número del 1 "
-                               "al 9, como las teclas de un teléfono: 1 arriba a la izquierda, 9 abajo a la "
-                               "derecha. Gana la casilla más votada.)")
+            # la votación no arranca hasta que Lara haya explicado cómo se vota (antes, el primer
+            # voto llegaba mientras el modelo aún se cargaba y se votaba sin explicación)
+            self.presentando = True
+            try:
+                await self._hablar("(Nota para ti: empieza una partida de tres en raya contra el chat; "
+                                   "empiezan ellos. Explica en una frase que voten escribiendo un número "
+                                   "del 1 al 9, como las teclas de un teléfono: 1 arriba a la izquierda, 9 "
+                                   "abajo a la derecha. Gana la casilla más votada.)")
+            finally:
+                self.presentando = False
+            if self.votos and not self.cierre_votos and self.activo:
+                self.cierre_votos = time.monotonic() + self.tiempo_votos
+                self._lanzar(self._cerrar_votacion())
         else:
             await self._hablar("(Nota para ti: empieza una partida de tres en raya contra tu rival, que "
                                "juega desde el panel, y empieza tu rival. No sabes cómo se llama: no le "
@@ -232,7 +246,7 @@ class TresEnRaya:
             c._apuntar_turno(mensajes, dice)   # para que la jugada también se pueda valorar 👍/👎
             c._recordar(f"(Tres en raya: te tocaba mover.)", dice)
             await self.vt._revisar_y_decir(dice, generacion, "juego")
-        if await self._comprobar_final():
+        if await self._comprobar_final(casilla, LARA):
             return
         self.turno = RIVAL
         await self._avisar()
@@ -279,7 +293,9 @@ class TresEnRaya:
                 return True                                # ya ha gastado sus votos de esta ronda
             self.votos[f"{autor}#{llevados}"] = casilla
         self.por_autor[autor] = self.por_autor.get(autor, 0) + 1
-        if not self.cierre_votos:
+        if self.presentando:
+            asyncio.create_task(self._avisar())   # cuenta, pero el reloj empieza cuando Lara lo explique
+        elif not self.cierre_votos:
             self.cierre_votos = time.monotonic() + self.tiempo_votos
             self._lanzar(self._cerrar_votacion())
         else:

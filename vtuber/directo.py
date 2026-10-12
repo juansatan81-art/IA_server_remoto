@@ -31,6 +31,32 @@ _DESPEDIDA = re.compile(r"\b(me voy|me tengo que ir|me despido|adi[oó]s|chao|ch
 _RELLENO = {"que", "del", "las", "los", "una", "uno", "por", "para", "con"}
 
 
+_ADORNO = re.compile(r"^(?:[xX]+[xX_.\-]*)(?=[A-Z0-9])|(?<=[a-z0-9])(?:[_.\-]*[xX]+)$")
+_SUFIJO = re.compile(r"\.(?:art|exe|tv|yt|vt|png|jpg|gg)$", re.I)
+_SOBRAN = {"mx", "ar", "es", "cl", "co", "pe", "ve", "us", "uy", "ec", "yt", "tv", "vt", "ttv", "oficial",
+           "official", "yt", "live", "gaming", "games", "uwu", "owo", "xd", "gamer", "player",
+           "user", "usuario"}
+
+
+def nombre_hablado(autor):
+    """El apodo como se puede decir en voz alta: «xXDarkXx» -> «Dark», «Dani_MX» -> «Dani»,
+    «Valeria.art» -> «Valeria», «Kevin2009» -> «Kevin», «VenezolanoRandom7» -> «Venezolano Random».
+    La memoria sigue usando el apodo real; esto es solo lo que ve (y dice) Lara."""
+    n = (autor or "").strip().lstrip("@")
+    n = _SUFIJO.sub("", n)
+    if re.match(r"^[xX]{1,2}[A-Z]", n) and re.search(r"[a-z][xX]{1,2}$", n):
+        n = _ADORNO.sub("", n)                                     # «xXDarkXx» -> «Dark»
+    n = re.sub(r"(?<=[a-záéíóúñ])(?=[A-ZÁÉÍÓÚÑ])", " ", n)        # «NoSoyUnBot» -> «No Soy Un Bot»
+    n = re.sub(r"[\d_.\-|~*#]+", " ", n)
+    # fuera las «x» de adorno sueltas («XX Juan XX», «xX_Sombra_Xx») y las coletillas
+    palabras = [p for p in n.split() if p.lower() not in _SOBRAN and not re.fullmatch(r"[xX]+", p)]
+    palabras = [p.capitalize() if p.isupper() and len(p) > 3 else p for p in palabras]
+    if len(palabras) > 4:
+        palabras = palabras[:2]
+    hablado = " ".join(palabras).strip()
+    return hablado if len(re.sub(r"[^a-zA-ZáéíóúñÁÉÍÓÚÑ]", "", hablado)) >= 2 else "alguien del chat"
+
+
 def _normalizar(texto):
     t = unicodedata.normalize("NFKD", texto.lower())
     t = "".join(c for c in t if not unicodedata.combining(c))
@@ -218,7 +244,7 @@ class Directo:
         juntos.sort()
         elegido["seguidos"] = len(juntos)
         elegido["texto"] = "\n".join(t for _, t in juntos)
-        ambiente = [f"{m['autor']}: {m['texto']}" for m in list(self.cola)[-5:]]
+        ambiente = [f"{nombre_hablado(m['autor'])}: {m['texto']}" for m in list(self.cola)[-5:]]
         return elegido, ambiente
 
     # ------------------------------------------------------------ contexto
@@ -243,6 +269,10 @@ class Directo:
         if self.resumen_vivo:
             partes.append(f"Lo que va de directo: {self.resumen_vivo}")
         partes.append(self._texto_animo())
+        if self.activo:
+            partes.append("Ya has saludado a todo el chat al empezar: NO vuelvas a decir «hola a todos»."
+                          if self.saludado else
+                          "Aún no has saludado al empezar el directo: saluda a todos una vez, brevemente.")
         if self.vt.juego.activo:
             partes.append(self.vt.juego.nota())
         if self._vista():
@@ -297,28 +327,30 @@ class Directo:
             await self.vt.registrar("filtro", f"Ignorado ({motivo or 'no apto'}) — {m['autor']}: {m['texto']}")
             return
         nuevo_hoy = m["autor"] not in self.respondidos
-        extra = [self.vt.memoria.sobre(m["autor"]), self.vt.glosario.nota(m["texto"])]
+        apodo = nombre_hablado(m["autor"])   # Lara ve (y dice) el nombre limpio; la memoria usa el real
+        extra = [self.vt.memoria.sobre(m["autor"], apodo), self.vt.glosario.nota(m["texto"])]
         self.sin_respuesta.pop(m["autor"], None)
         if _DESPEDIDA.search(m["texto"]):
-            extra.append(f"Parece que {m['autor']} se despide del directo: si de verdad se va, despídelo "
+            extra.append(f"Parece que {apodo} se despide del directo: si de verdad se va, despídelo "
                          f"por su nombre con un deseo concreto según lo que haya contado.")
         if self._explica(m):
             tema = self.por_explicar["tema"]
-            extra.append(f"{m['autor']} te está explicando qué es «{tema}», que antes no conocías: "
+            extra.append(f"{apodo} te está explicando qué es «{tema}», que antes no conocías: "
                          f"dale las gracias y repítelo con tus palabras («ah, o sea que…»).")
             self.vt._por_aprender.append((tema, f"Explicación de un espectador del chat: {m['texto']}"))
             self.explicados |= self._palabras_tema()
             self.por_explicar = None
         elif nuevo_hoy and self.inicio and time.monotonic() - self.inicio > 600 and (self.resumen_vivo or self.plan):
-            extra.append(f"{m['autor']} acaba de llegar al directo: si viene a cuento, cuéntale en una "
+            extra.append(f"{apodo} acaba de llegar al directo: si viene a cuento, cuéntale en una "
                          f"frase de qué va.")
         if m["varios"] > 1:
             extra.append(f"{m['varios']} personas han escrito esto mismo: puedes responder a todos a la vez.")
         if m.get("seguidos", 1) > 1:
-            extra.append(f"{m['autor']} ha escrito {m['seguidos']} mensajes seguidos: respóndele a todo junto, con naturalidad.")
+            extra.append(f"{apodo} ha escrito {m['seguidos']} mensajes seguidos: respóndele a todo junto, con naturalidad.")
         if ambiente:
-            extra.append("Otros mensajes recientes del chat (solo para que sepas el ambiente): "
-                         + " | ".join(ambiente))
+            extra.append(f"Otros mensajes recientes del chat, solo para que sepas el ambiente: NO los "
+                         f"leas, NO los nombres y NO les respondas ahora (ya les tocará); responde "
+                         f"SOLO a {apodo}: " + " | ".join(ambiente))
         self.vt.memoria.visto(m["autor"])
         self.respondidos[m["autor"]] = time.monotonic()
         self.seguidas_sola = 0
@@ -328,14 +360,16 @@ class Directo:
             self._cambiar_animo(humor=-0.06)
             self.negativos[m["autor"]] = self.negativos.get(m["autor"], 0) + 1
         imagenes = self._vista() if self.ver_en_respuestas else []
-        respuesta = await self.vt.responder_y_hablar(m["texto"], m["autor"], imagenes,
-                                                     self._nota(" ".join(e for e in extra if e)))
+        respuesta = await self.vt.responder_y_hablar(m["texto"], apodo, imagenes,
+                                                     self._nota(" ".join(e for e in extra if e)),
+                                                     real=m["autor"])
         self._recoger_desconocido()
         if respuesta:
+            self.saludado = True      # con el chat lleno desde el principio, saluda en su primera respuesta
             self.cambiar_tema = False
             self._cambiar_animo(energia=-0.004)
             self._programar_espontaneo()
-            asyncio.create_task(self._apuntar_espectador(m["autor"], m["texto"]))
+            asyncio.create_task(self._apuntar_espectador(m["autor"], m["texto"], apodo))
 
     def _recoger_desconocido(self):
         """Si al responder dijo no conocer algo, queda a la espera de que el chat lo explique."""
@@ -378,9 +412,9 @@ class Directo:
             self.resumen_vivo = resumen
             await self.vt.registrar("sistema", f"Lo que va de directo: {resumen}")
 
-    async def _apuntar_espectador(self, autor, texto):
-        try:
-            self.vt.memoria.anotar(autor, await self.vt.ayudante.nota_espectador(autor, texto))
+    async def _apuntar_espectador(self, autor, texto, apodo=None):
+        try:   # la nota se escribe con el nombre limpio (es lo que luego lee Lara); se guarda con el real
+            self.vt.memoria.anotar(autor, await self.vt.ayudante.nota_espectador(apodo or autor, texto))
         except Exception:
             pass
 
@@ -403,8 +437,10 @@ class Directo:
             extra = "Agradéceselo."
             self._cambiar_animo(humor=0.1)
         self.vt.memoria.visto(e["autor"])
-        extra += " " + self.vt.memoria.sobre(e["autor"])
-        await self.vt.responder_y_hablar(mensaje, e["autor"], self._vista(), self._nota(extra))
+        apodo = nombre_hablado(e["autor"])
+        extra += " " + self.vt.memoria.sobre(e["autor"], apodo)
+        if await self.vt.responder_y_hablar(mensaje, apodo, self._vista(), self._nota(extra), real=e["autor"]):
+            self.saludado = True
         self._programar_espontaneo()
 
     async def _espontaneo(self):

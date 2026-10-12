@@ -114,9 +114,10 @@ class VTuber:
     async def al_avatar(self, mensaje):
         await self._enviar(self.avatares, mensaje)
 
-    async def registrar(self, quien, texto, id_frase=""):
+    async def registrar(self, quien, texto, id_frase="", para_lara=None):
+        """`para_lara`: otra versión del texto para el resumen del directo (con el nombre limpio)."""
         log.info("[%s] %s", quien, texto)
-        self.directo.apuntar(quien, texto)
+        self.directo.apuntar(quien, para_lara or texto)
         mensaje = {"tipo": "registro", "quien": quien, "texto": texto}
         if id_frase:   # el panel le pone los botones 👍/👎
             mensaje["id"] = id_frase
@@ -228,14 +229,16 @@ class VTuber:
         await self.decir(respuesta, "neutral")
         return respuesta
 
-    async def responder_y_hablar(self, mensaje, usuario=None, imagenes=None, nota="", quien="usuario"):
-        """`quien`: cómo sale el mensaje en el registro ("sistema" si es una nota interna, no del chat)."""
+    async def responder_y_hablar(self, mensaje, usuario=None, imagenes=None, nota="", quien="usuario", real=None):
+        """`quien`: cómo sale el mensaje en el registro ("sistema" si es una nota interna, no del chat).
+        `real`: el apodo tal cual del chat, si a Lara se le pasa uno más fácil de decir (`usuario`)."""
         async with self.turno:
             generacion = self.generacion
-            texto = f"{usuario}: {mensaje}" if usuario else mensaje
+            visible = f"{real} (Lara: «{usuario}»)" if real and real != usuario else usuario
+            texto = f"{visible}: {mensaje}" if usuario else mensaje
             if imagenes:
                 texto += f"  [{len(imagenes)} imagen{'es' if len(imagenes) > 1 else ''}]"
-            await self.registrar(quien, texto)
+            await self.registrar(quien, texto, para_lara=f"{usuario}: {mensaje}" if usuario else None)
             await self.al_avatar({"tipo": "emocion", "nombre": "pensativa", "duracion": 30})
 
             async def aviso(que):

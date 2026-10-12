@@ -4,6 +4,7 @@ Se guarda en la carpeta memoria/ como JSON legible (puedes abrirlo y corregirlo 
 """
 import json
 import logging
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,17 @@ log = logging.getLogger("vtuber")
 
 MAX_NOTAS = 6          # cosas que recuerda de cada espectador
 RECUERDOS_EN_PROMPT = 3
+
+
+# El ayudante pequeño, cuando no hay nada que apuntar, a veces escribe «No cuenta nada sobre sí
+# mismo…», «nota vacía» o «No». Eso no se guarda ni se le pasa a Lara (gastaba contexto en balde).
+_NOTA_VACIA = re.compile(r"^\W*(no|nota|nada|ninguna?|vac[ií]a|n/?a|sin datos)\W*$|no hay informaci[oó]n|"
+                         r"no (se )?(cuenta|menciona|mencion[oó]|dice|comparte|aporta)|no obstante|"
+                         r"nota vac[ií]a|sin informaci[oó]n|no hay (nada|datos)", re.I)
+
+
+def nota_util(nota):
+    return bool(nota) and len(nota.strip()) >= 8 and not _NOTA_VACIA.search(nota)
 
 
 class Memoria:
@@ -52,7 +64,7 @@ class Memoria:
         return dias_antes
 
     def anotar(self, autor, nota):
-        if not nota:
+        if not nota_util(nota):
             return
         e = self.espectadores.get(autor)
         if e is None or nota in e["notas"]:
@@ -60,9 +72,11 @@ class Memoria:
         e["notas"] = (e["notas"] + [nota])[-MAX_NOTAS:]
         self._guardar(self.f_espectadores, self.espectadores)
 
-    def sobre(self, autor):
-        """Frase para el modelo con lo que sabe de esa persona."""
+    def sobre(self, autor, nombre=None):
+        """Frase para el modelo con lo que sabe de esa persona. `nombre`: cómo se le llama en voz
+        alta (el apodo limpio); la memoria se guarda siempre con el apodo real `autor`."""
         e = self.espectadores.get(autor)
+        real, autor = autor, nombre or autor
         if not e:
             return f"{autor} escribe por primera vez: dale la bienvenida."
         hoy = datetime.now().strftime("%Y-%m-%d")
@@ -75,8 +89,10 @@ class Memoria:
             partes.append(f"{autor} ya ha venido a {otros_dias} directo(s) anteriores.")
         elif hoy not in e["dias"]:
             partes.append(f"{autor} escribe por primera vez: dale la bienvenida.")
-        if e["notas"]:
-            partes.append(f"Lo que recuerdas de {autor}: " + "; ".join(e["notas"]) + ".")
+        notas = [n for n in e["notas"] if nota_util(n)]
+        if notas:
+            # las notas antiguas llevan el apodo real («Dani_MX contó…»): se leen con el nombre limpio
+            partes.append(f"Lo que recuerdas de {autor}: " + "; ".join(n.replace(real, autor) for n in notas) + ".")
         return " ".join(partes)
 
     # ---------------------------------------------------------- directos
