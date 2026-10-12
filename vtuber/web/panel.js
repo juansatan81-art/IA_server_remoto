@@ -17,14 +17,40 @@ async function api(ruta, datos = {}) {
 
 const NOMBRES = { usuario: 'Chat / tú', ia: 'IA', error: 'Error', sistema: 'Sistema',
   pensamiento: 'Piensa (no se oye)', filtro: 'Filtro' };
-function anotar(quien, texto) {
+function anotar(quien, texto, id) {
   const div = document.createElement('div');
   div.className = `linea ${quien}`;
   const b = document.createElement('b');
   b.textContent = NOMBRES[quien] || quien;
   div.append(b, texto);
+  if (id) div.append(botonesValorar(id));
   $('registro').append(div);
   $('registro').scrollTop = $('registro').scrollHeight;
+}
+
+// 👍 = así habla Lara (sirve para el entrenamiento) · 👎 = así no. Otro clic en el mismo, lo quita.
+function botonesValorar(id) {
+  const caja = document.createElement('span');
+  caja.className = 'valorar';
+  for (const [valor, icono, titulo] of [[1, '👍', 'Así habla Lara'], [-1, '👎', 'Así no']]) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = icono;
+    btn.title = titulo;
+    btn.onclick = async () => {
+      const nuevo = btn.classList.contains('elegido') ? 0 : valor;
+      try {
+        const r = await api('valorar', { id, valor: nuevo });
+        caja.querySelectorAll('button').forEach((x) => x.classList.remove('elegido'));
+        if (nuevo) btn.classList.add('elegido');
+        $('cuentaValoradas').textContent = `👍 ${r.buenas} · 👎 ${r.malas}`;
+      } catch (err) {
+        anotar('error', `No se pudo guardar la valoración: ${err.message}`);
+      }
+    };
+    caja.append(btn);
+  }
+  return caja;
 }
 
 function formulario(form, input, boton, accion) {
@@ -172,6 +198,7 @@ async function cargarEstado() {
       + ` · Voz: ${e.voz} · Avatares conectados: ${e.avatares_conectados}`;
     pintarDirecto(e.directo, e.youtube);
     pintarSemaforos(e);
+    if (e.valoradas) $('cuentaValoradas').textContent = `👍 ${e.valoradas.buenas} · 👎 ${e.valoradas.malas}`;
     if (!$('emociones').children.length) {
       for (const nombre of e.emociones) {
         const b = document.createElement('button');
@@ -230,8 +257,9 @@ function conectar() {
   const ws = new WebSocket(`${esquema}://${location.host}/ws?rol=panel`);
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.tipo === 'registro') anotar(m.quien, m.texto);
+    if (m.tipo === 'registro') anotar(m.quien, m.texto, m.id);
     if (m.tipo === 'glosario') cargarGlosario();
+    if (m.tipo === 'juego') pintarJuego(m);
     if (m.tipo === 'estado_avatar') {
       $('emocionActual').textContent = m.emocion;
       $('diciendo').textContent = m.texto ? `— «${m.texto}»` : '';
@@ -402,6 +430,46 @@ formulario('formTermino', 'nuevoTermino', 'anadirTermino', async (termino) => {
   $('nuevoSignificado').value = '';
   await cargarGlosario();
 });
+
+// ---------------------------------------------------------------- tres en raya
+function pintarJuego(j) {
+  const tablero = $('tableroPanel');
+  if (!tablero.children.length) {
+    for (let i = 1; i <= 9; i++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.onclick = async () => {
+        try { await api('juego/jugar', { casilla: i }); } catch (err) { anotar('error', `Tres en raya: ${err.message}`); }
+      };
+      tablero.append(b);
+    }
+  }
+  const votando = j.quedan !== null && j.quedan !== undefined;
+  const recuento = votando ? j.votos : (j.ultima_votacion ? j.ultima_votacion.votos : {});
+  [...tablero.children].forEach((b, i) => {
+    const ficha = j.tablero[i];
+    const votos = recuento[i + 1];
+    b.className = ficha;
+    b.textContent = ficha || '';
+    if (votos && (!ficha || (j.ultima_votacion && j.ultima_votacion.casilla === i + 1))) { const s = document.createElement('small'); s.textContent = `${votos} voto${votos > 1 ? 's' : ''}`; b.append(s); }
+    b.disabled = Boolean(ficha) || !j.activo || j.turno !== 'X' || j.rival !== 'panel';
+  });
+  const rival = j.rival === 'chat' ? 'el chat' : 'ti';
+  const fin = { O: '¡Ha ganado Lara!', X: `Ha ganado ${j.rival === 'chat' ? 'el chat' : 'tu X'}.`, empate: 'Empate.' };
+  $('estadoJuego').textContent = j.resultado ? fin[j.resultado]
+    : !j.activo ? 'Sin partida.'
+    : j.turno === 'O' ? 'Lara está pensando su jugada…'
+    : j.rival === 'chat' ? (j.quedan !== null ? `El chat está votando: quedan ${j.quedan} s.` : 'Turno del chat: esperando el primer voto (un número del 1 al 9).')
+    : `Te toca a ${rival}: eres la X.`;
+  $('marcadorJuego').textContent = `Lara ${j.marcador.lara} · rival ${j.marcador.rival} · empates ${j.marcador.empates}`;
+}
+$('urlJuego').textContent = `${location.origin}/juego`;
+$('nuevoJuego').onclick = async () => {
+  try { pintarJuego(await api('juego/nuevo', { rival: $('rivalJuego').value, empieza: $('empiezaJuego').value })); }
+  catch (err) { anotar('error', `Tres en raya: ${err.message}`); }
+};
+$('terminarJuego').onclick = async () => { pintarJuego(await api('juego/terminar')); };
+fetch('/api/estado').then((r) => r.json()).then((e) => e.juego && pintarJuego(e.juego)).catch(() => {});
 
 conectar();
 setInterval(cargarEstado, 3000);

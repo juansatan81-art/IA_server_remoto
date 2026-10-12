@@ -194,6 +194,45 @@ navegador bloqueando el sonido (haz clic en la vista previa del avatar).
 La API da 10.000 unidades al día; leyendo cada 8 s llega para unas 4 horas de
 directo. Lo que ya estaba escrito al conectarse no se responde.
 
+### La dinámica del directo
+
+`dinamica_directo.md` cuenta cómo son los directos del canal: saludo y despedida,
+secciones fijas, bromas internas, normas. Lara lo lee al pulsar **Empezar directo** (no
+hace falta reiniciar). Solo le llegan los apartados con algo escrito; las notas entre
+`<!-- -->` no las lee.
+
+### 👍/👎: guardar cómo habla Lara (para entrenarla algún día)
+
+Todo lo que dice Lara se guarda solo, con el contexto exacto que vio el modelo, en
+`memoria/conversaciones/`. En el panel, debajo de cada frase suya, **👍** = así habla
+Lara, **👎** = así no (otro clic en el mismo botón lo quita). El contador está junto a
+«Hablar con Lara». Para sacar el dataset:
+
+```bash
+python herramientas/exportar_dataset.py          # escribe memoria/dataset/buenas.jsonl y malas.jsonl
+python herramientas/exportar_dataset.py --ver    # solo cuenta
+```
+
+Para un fine-tuning que se note hacen falta unos cientos de 👍 (mejor 500 o más).
+
+### Tres en raya (el primer juego)
+
+Pestaña **Juegos** del panel: Lara (la O) contra ti, pulsando las casillas, o contra **el
+chat**, que vota escribiendo un número del 1 al 9 (gana la casilla más votada en 15 s; un
+número suelto cuenta como voto y no pasa a la charla). Cada mensaje es un voto, con un tope
+de 5 por persona y votación (`tope_votos`, 0 = sin límite; `"modo_votos": "por_persona"` = un
+voto por persona). Los votos no se guardan: al cerrarse cada votación se borran. Lara recibe el tablero en texto,
+elige casilla y la comenta; si elige una ocupada, el juego pone una libre por ella. En OBS:
+fuente de navegador con `http://127.0.0.1:8765/juego`, 600×600, fondo transparente (solo se
+ve mientras hay partida). Ajustes en `config.json` → `"juego": {...}` (`pistas` le dice qué casillas ganan o bloquean). Es la plantilla para
+los juegos siguientes: `juego.py`.
+
+### Estudiar directos de otras streamers
+
+`herramientas/estudiar_directo.py URL` descarga un directo de YouTube, transcribe la voz y
+la intercala con la repetición del chat en `memoria/estudio/<id>/`. Lo aprendido de la
+primera tanda (7 directos) está en `estudio_directos.md`.
+
 ## Controlarlo desde otros programas
 
 Cualquier programa (un bot de Twitch, otra IA, un script) puede manejarlo por

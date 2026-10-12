@@ -35,6 +35,7 @@ import atexit
 import json
 import logging
 import random
+import re
 import sys
 import time
 import urllib.request
@@ -46,9 +47,11 @@ from aiohttp import WSMsgType, web
 
 import filtros
 from cerebro import Cerebro
+from conversaciones import Conversaciones
 from directo import Directo
-from emociones import EMOCIONES, dividir, normalizar
+from emociones import EMOCIONES, dividir, normalizar, para_voz
 from glosario import Glosario
+from juego import TresEnRaya
 from videos import Videos
 from memoria import Memoria
 from voz import Voz
@@ -58,6 +61,7 @@ RAIZ = Path(__file__).resolve().parent
 WEB = RAIZ / "web"
 AUDIO = RAIZ / "audio_cache"
 MEMORIA = RAIZ / "memoria"
+DINAMICA = RAIZ / "dinamica_directo.md"   # cómo son los directos (lo escribe Juan Luis)
 
 log = logging.getLogger("vtuber")
 
@@ -84,10 +88,14 @@ class VTuber:
         self.sin_pantallas_desde = None   # desde cuándo no hay ni panel ni avatar abiertos
         self.modelos_descargados = False
         self.cerebro.recuerdos = self.memoria.recuerdos()
+        self.conversaciones = Conversaciones(MEMORIA)
+        self.cargar_dinamica()
         self.voz = Voz(cfg.get("voz", {}), AUDIO)
         self.directo = Directo(self, cfg.get("directo", {}))
         self.youtube = YouTube(cfg.get("youtube", {}), self.directo.recibir, self.registrar)
         self.avatares = set()
+        self.pantallas_juego = set()   # la página /juego (el tablero en OBS)
+        self.juego = TresEnRaya(self, cfg.get("juego", {}))
         self.paneles = set()
         self.turno = asyncio.Lock()   # una respuesta detrás de otra, en orden
         self.pendientes = {}          # frases enviadas al avatar que aún no ha terminado de decir
@@ -106,10 +114,30 @@ class VTuber:
     async def al_avatar(self, mensaje):
         await self._enviar(self.avatares, mensaje)
 
-    async def registrar(self, quien, texto):
+    async def registrar(self, quien, texto, id_frase=""):
         log.info("[%s] %s", quien, texto)
         self.directo.apuntar(quien, texto)
-        await self._enviar(self.paneles, {"tipo": "registro", "quien": quien, "texto": texto})
+        mensaje = {"tipo": "registro", "quien": quien, "texto": texto}
+        if id_frase:   # el panel le pone los botones 👍/👎
+            mensaje["id"] = id_frase
+        await self._enviar(self.paneles, mensaje)
+
+    def cargar_dinamica(self):
+        """Lee dinamica_directo.md (sin los comentarios <!-- -->). Se relee al empezar cada directo."""
+        try:
+            texto = DINAMICA.read_text(encoding="utf-8")
+        except OSError:
+            texto = ""
+        texto = re.sub(r"<!--.*?-->", "", texto, flags=re.S)
+        # solo pasan los apartados con algo escrito debajo del título (la plantilla vacía no se manda)
+        apartados = []
+        for trozo in re.split(r"(?m)^(?=#)", texto):
+            titulo, _, cuerpo = trozo.partition("\n") if trozo.startswith("#") else ("", "", trozo)
+            cuerpo = "\n".join(l.rstrip() for l in cuerpo.strip().splitlines() if l.strip())
+            if cuerpo:
+                apartados.append(f"{titulo.lstrip('# ').strip()}:\n{cuerpo}" if titulo else cuerpo)
+        self.cerebro.dinamica = "\n\n".join(apartados)
+        return bool(self.cerebro.dinamica)
 
     async def estado_ia(self):
         """¿Responde Ollama y tiene el modelo del cerebro? (se mira como mucho cada 10 s)"""
@@ -159,12 +187,12 @@ class VTuber:
     async def decir(self, texto, emocion=None):
         """Habla un texto que puede llevar etiquetas [emocion]."""
         for emo, frase in dividir(texto, normalizar(emocion) if emocion else None):
-            if not frase:
+            if not para_voz(frase):    # sin nada que se pueda decir (solo un «XD», un emoji...)
                 await self.al_avatar({"tipo": "emocion", "nombre": emo})
                 continue
             mensaje = {"tipo": "hablar", "id": uuid.uuid4().hex, "texto": frase, "emocion": emo}
             try:
-                mensaje["audio"] = "/audio/" + await self.voz.sintetizar(frase)
+                mensaje["audio"] = "/audio/" + await self.voz.sintetizar(para_voz(frase))
                 self.fallos_voz = 0
             except Exception as err:  # sin voz, el avatar al menos muestra la emoción y el texto
                 self.fallos_voz += 1
@@ -181,8 +209,11 @@ class VTuber:
         if not self.pendientes:
             self.fin_habla = time.monotonic()
 
-    async def _revisar_y_decir(self, respuesta, generacion):
+    async def _revisar_y_decir(self, respuesta, generacion, origen="chat"):
         """Último control antes de la voz: si se pulsó pánico o la frase no es apta, no se dice."""
+        turno, self.cerebro.ultimo_turno = self.cerebro.ultimo_turno, None
+        if turno and turno["respuesta"] != respuesta:
+            turno = None
         if generacion != self.generacion:
             await self.registrar("sistema", f"(descartado por pánico) {respuesta}")
             return None
@@ -192,17 +223,19 @@ class VTuber:
             respuesta = filtros.FRASE_SEGURA
         if generacion != self.generacion:
             return None
-        await self.registrar("ia", respuesta)
+        id_frase = self.conversaciones.guardar(turno, respuesta, origen, bloqueada=not apto)
+        await self.registrar("ia", respuesta, id_frase if apto else "")
         await self.decir(respuesta, "neutral")
         return respuesta
 
-    async def responder_y_hablar(self, mensaje, usuario=None, imagenes=None, nota=""):
+    async def responder_y_hablar(self, mensaje, usuario=None, imagenes=None, nota="", quien="usuario"):
+        """`quien`: cómo sale el mensaje en el registro ("sistema" si es una nota interna, no del chat)."""
         async with self.turno:
             generacion = self.generacion
             texto = f"{usuario}: {mensaje}" if usuario else mensaje
             if imagenes:
                 texto += f"  [{len(imagenes)} imagen{'es' if len(imagenes) > 1 else ''}]"
-            await self.registrar("usuario", texto)
+            await self.registrar(quien, texto)
             await self.al_avatar({"tipo": "emocion", "nombre": "pensativa", "duracion": 30})
 
             async def aviso(que):
@@ -236,7 +269,7 @@ class VTuber:
 
     async def chat(self, mensaje, usuario=None, imagenes=None):
         """Charla directa desde el panel (tú hablándole). En directo, también sabe el contexto."""
-        nota = self.directo._nota() if self.directo.activo else ""
+        nota = self.directo._nota() if self.directo.activo else self.juego.nota()
         self.directo.seguidas_sola = 0
         if self.directo.activo and not imagenes:
             imagenes = self.directo._vista()
@@ -251,7 +284,7 @@ class VTuber:
                 await self.registrar("pensamiento", pensamiento)
             if not dice:
                 return ""
-            return await self._revisar_y_decir(dice, generacion) or ""
+            return await self._revisar_y_decir(dice, generacion, "sola") or ""
 
 
     # ---------------------------------------------------------------- apagar los modelos
@@ -321,7 +354,7 @@ def crear_app(vt: VTuber):
         pregunta si hay versión nueva; si no la hay, usa la suya). Sin esto, OBS y el
         navegador seguían con el panel o el avatar viejos después de actualizar."""
         resp = await handler(req)
-        if req.path in ("/panel", "/avatar") or req.path.endswith((".js", ".html", ".json")):
+        if req.path in ("/panel", "/avatar", "/juego") or req.path.endswith((".js", ".html", ".json")):
             resp.headers["Cache-Control"] = "no-cache"
         return resp
 
@@ -343,6 +376,36 @@ def crear_app(vt: VTuber):
     async def avatar(_):
         return web.FileResponse(WEB / "avatar.html")
 
+    @rutas.get("/juego")
+    async def pagina_juego(_):
+        return web.FileResponse(WEB / "juego.html")
+
+    @rutas.post("/api/juego/nuevo")
+    async def juego_nuevo(req):
+        # {"rival": "panel" | "chat", "empieza": "rival" | "lara"}
+        datos = await json_de(req)
+        await vt.juego.nueva(str(datos.get("rival", "panel")), str(datos.get("empieza", "rival")))
+        return web.json_response(vt.juego.estado())
+
+    @rutas.post("/api/juego/jugar")
+    async def juego_jugar(req):
+        datos = await json_de(req)
+        try:
+            casilla = int(datos.get("casilla"))
+        except (TypeError, ValueError):
+            raise web.HTTPBadRequest(text="Falta 'casilla' (1-9)")
+        if vt.juego.rival != "panel":
+            return web.json_response({"error": "En esta partida juega el chat"}, status=409)
+        error = await vt.juego.jugar_rival(casilla)
+        if error:
+            return web.json_response({"error": error}, status=409)
+        return web.json_response(vt.juego.estado())
+
+    @rutas.post("/api/juego/terminar")
+    async def juego_terminar(_):
+        await vt.juego.terminar()
+        return web.json_response(vt.juego.estado())
+
     @rutas.get("/panel")
     async def panel(_):
         return web.FileResponse(WEB / "panel.html")
@@ -351,7 +414,10 @@ def crear_app(vt: VTuber):
     async def socket(req):
         ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(req)
-        grupo = vt.paneles if req.query.get("rol") == "panel" else vt.avatares
+        rol = req.query.get("rol")
+        grupo = vt.paneles if rol == "panel" else vt.pantallas_juego if rol == "juego" else vt.avatares
+        if rol == "juego":
+            await ws.send_str(json.dumps(vt.juego.estado(), ensure_ascii=False))
         grupo.add(ws)
         de_obs = grupo is vt.avatares and req.query.get("vista") != "panel"   # la vista previa no es OBS
         if de_obs:
@@ -392,6 +458,8 @@ def crear_app(vt: VTuber):
             "ayudante": vt.ayudante.modelo if vt.ayudante.disponible else "",
             "directo": vt.directo.estado(),
             "youtube": {"configurado": vt.youtube.configurado, "estado": vt.youtube.estado},
+            "valoradas": vt.conversaciones.cuantas(),
+            "juego": vt.juego.estado(),
         })
 
     @rutas.post("/api/chat")
@@ -410,6 +478,16 @@ def crear_app(vt: VTuber):
         except Exception as err:
             return web.json_response({"error": str(err)}, status=502)
         return web.json_response({"respuesta": respuesta or ""})
+
+    @rutas.post("/api/valorar")
+    async def valorar(req):
+        # {"id": "...", "valor": 1 | -1 | 0}: 👍, 👎 o quitar la valoración de una frase
+        datos = await json_de(req)
+        id_frase, valor = str(datos.get("id", "")), datos.get("valor")
+        if not re.fullmatch(r"[0-9a-f]{12}", id_frase) or valor not in (1, -1, 0):
+            raise web.HTTPBadRequest(text="Se esperaba {'id': ..., 'valor': 1, -1 o 0}")
+        vt.conversaciones.valorar(id_frase, valor)
+        return web.json_response({"ok": True, **vt.conversaciones.cuantas()})
 
     @rutas.post("/api/decir")
     async def decir(req):
@@ -454,6 +532,8 @@ def crear_app(vt: VTuber):
     @rutas.post("/api/directo/iniciar")
     async def directo_iniciar(req):
         datos = await json_de(req)
+        if vt.cargar_dinamica():   # por si se ha editado dinamica_directo.md con el servidor abierto
+            await vt.registrar("sistema", "Dinámica del directo cargada (dinamica_directo.md)")
         await vt.directo.iniciar(str(datos.get("plan", "")))
         if vt.youtube.configurado and datos.get("youtube", True) and vt.youtube.estado == "desconectado":
             await vt.youtube.conectar(str(datos.get("video", "")))

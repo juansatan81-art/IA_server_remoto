@@ -6,6 +6,9 @@ EMOCIONES = ["neutral", "feliz", "enojada", "triste", "llorando",
 
 # Lo que un modelo suele escribir en lugar del nombre exacto
 SINONIMOS = {
+    # las que salen jugando
+    "alivio": "feliz", "aliviada": "feliz", "frustrada": "enojada", "picada": "enojada",
+    "agobiada": "sorprendida", "concentrada": "pensativa",
     "normal": "neutral", "seria": "neutral", "tranquila": "neutral", "calmada": "neutral",
     "contenta": "feliz", "alegre": "feliz", "riendo": "feliz", "risa": "feliz",
     "emocionada": "feliz", "happy": "feliz", "sonriente": "feliz", "excitada": "feliz",
@@ -45,6 +48,26 @@ def limpiar(texto):
     texto = _ACCIONES.sub("", texto)
     texto = _EMOJI.sub("", texto)
     return re.sub(r"\s+", " ", texto).strip()
+
+
+_EMOTICONOS = re.compile(r"(?<!\w)(?:[xX][dD]+|[:;=]-?[)(DPpOo3]+|<3+|u[wW]u|o[wW]o|\^_*\^|T_T|:v)(?!\w)")
+_MARCAS = re.compile(r"[*_#~`|<>\[\]{}]")
+_ENLACES = re.compile(r"https?://\S+|www\.\S+")
+
+
+def para_voz(frase):
+    """Lo que se oye: sin emoticonos ni símbolos que la voz leería tal cual («equis de»,
+    «dos puntos paréntesis»…). El texto que se ve en el panel no cambia."""
+    # Decidido por Juan Luis escuchando pruebas con las dos voces (2026-10-12): las risas largas, «¡¡¡…!!!», «¿¿…??»,
+    # mayúsculas y «Mmm» se dejan; «XD» y los emoticonos se quitan (Fish dice «xte» o cosas raras
+    # y Ximena lee «emoticono cara riendo»).
+    t = _ENLACES.sub("", frase)
+    t = _EMOTICONOS.sub("", t)
+    t = _MARCAS.sub("", t)
+    t = re.sub(r"(\d)\s*-\s*(\d)", r"\1 o \2", t)  # «1-2» -> «1 o 2»
+    t = re.sub(r"\s+([,.;:!?…])", r"\1", t)
+    t = re.sub(r"[,;:]+([.!?…])", r"\1", t)        # «Jajaja,.» (al quitar un «XD») -> «Jajaja.»
+    return re.sub(r"\s+", " ", t).strip(" ,;")
 
 
 def dividir(texto, por_defecto=None):

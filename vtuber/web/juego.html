@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tres en raya</title>
+<style>
+  /* Para OBS: fuente de navegador cuadrada (p. ej. 1000×1000), fondo transparente.
+     El tablero va sobre una tarjeta clara para que se lea sobre cualquier fondo del directo. */
+  :root { --menta: #23A581; --tinta: #1b1b1f; --tarjeta: rgba(255, 255, 255, .92); --linea: #1b1b1f;
+          --voto: #f59e0b; --sombra: rgba(0, 0, 0, .35); }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body { display: grid; place-items: center; font-family: "Century Gothic", "Avenir", "Segoe UI", sans-serif; color: var(--tinta); }
+  #caja { width: min(94vw, 68vh); padding: 3vmin 3.5vmin 2.5vmin; border-radius: 4vmin; background: var(--tarjeta);
+          box-shadow: 0 1.2vmin 4vmin var(--sombra); display: grid; gap: 2vmin; transition: opacity .4s; }
+  #caja.oculto { opacity: 0; }
+  #titulo { text-align: center; font-size: 5.5vmin; font-weight: 700; }
+  #tablero { display: grid; grid-template-columns: repeat(3, 1fr); aspect-ratio: 1; }
+  .celda { position: relative; display: grid; place-items: center; font-size: 16vmin; font-weight: 700; line-height: 1;
+           border-color: var(--linea); border-style: solid; border-width: 0; }
+  .celda:nth-child(-n+6) { border-bottom-width: .9vmin; }
+  .celda:not(:nth-child(3n)) { border-right-width: .9vmin; }
+  .celda.O { color: var(--menta); }
+  .celda.ganadora { background: rgba(35, 165, 129, .15); }
+  .celda .num { position: absolute; top: 1vmin; left: 1.6vmin; font-size: 4.6vmin; font-weight: 700; color: var(--tinta); opacity: .8; }
+  .celda .votos { position: absolute; bottom: 1.2vmin; right: 1.4vmin; min-width: 5vmin; padding: .3vmin 1.2vmin;
+                  border-radius: 99px; background: var(--voto); color: #fff; font-size: 3.8vmin; font-weight: 700; text-align: center; }
+  .celda .votos.cerrado { background: #6b7280; }
+  .celda.nueva > .ficha { animation: aparecer .35s ease-out; }
+  @keyframes aparecer { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #estado { text-align: center; font-size: 4.2vmin; min-height: 5vmin; }
+</style>
+</head>
+<body>
+<div id="caja" class="oculto">
+  <div id="titulo">Tres en raya</div>
+  <div id="tablero"></div>
+  <div id="estado"></div>
+</div>
+<script>
+'use strict';
+const tablero = document.getElementById('tablero');
+for (let i = 1; i <= 9; i++) {
+  const c = document.createElement('div');
+  c.className = 'celda';
+  tablero.append(c);
+}
+let anterior = Array(9).fill('');
+
+function pintar(j) {
+  document.getElementById('caja').classList.toggle('oculto', !j.activo && !j.resultado);
+  const votando = j.quedan !== null && j.quedan !== undefined;
+  // mientras se vota, el recuento en marcha; después, el de la última votación (hasta la siguiente)
+  const recuento = votando ? j.votos : (j.ultima_votacion ? j.ultima_votacion.votos : {});
+  [...tablero.children].forEach((c, i) => {
+    const ficha = j.tablero[i];
+    const ganadora = !votando && j.ultima_votacion && j.ultima_votacion.casilla === i + 1;
+    c.className = `celda ${ficha}${ficha && !anterior[i] ? ' nueva' : ''}${ganadora ? ' ganadora' : ''}`;
+    c.replaceChildren();
+    if (ficha) {
+      const f = document.createElement('span'); f.className = 'ficha'; f.textContent = ficha; c.append(f);
+    } else {
+      const n = document.createElement('span'); n.className = 'num'; n.textContent = i + 1; c.append(n);
+    }
+    const v = recuento[i + 1];
+    if (v && (!ficha || ganadora)) {
+      const s = document.createElement('span');
+      s.className = `votos${votando ? '' : ' cerrado'}`;
+      s.textContent = v;
+      c.append(s);
+    }
+  });
+  anterior = j.tablero.slice();
+  const contra = j.rival === 'chat' ? 'el chat' : 'el rival';
+  const total = votando ? Object.values(j.votos).reduce((a, b) => a + b, 0) : 0;
+  document.getElementById('titulo').textContent = j.rival === 'chat' ? 'Lara contra el chat' : 'Tres en raya';
+  document.getElementById('estado').textContent =
+    j.resultado === 'O' ? '¡Gana Lara!' : j.resultado === 'X' ? `¡Gana ${contra}!` : j.resultado === 'empate' ? 'Empate'
+    : j.turno === 'O' ? 'Lara está pensando…'
+    : j.rival === 'chat' ? (votando ? `Votando · ${total} voto${total === 1 ? '' : 's'} · ${j.quedan} s`
+                                    : 'Escriban un número del 1 al 9 para votar')
+    : 'Turno del rival';
+}
+
+function conectar() {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?rol=juego`);
+  ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.tipo === 'juego') pintar(m); };
+  ws.onclose = () => setTimeout(conectar, 1500);
+}
+conectar();
+</script>
+</body>
+</html>

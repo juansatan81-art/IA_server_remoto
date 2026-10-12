@@ -13,7 +13,7 @@
     "api_key": "local",
     "temperatura": 0.8,
     "max_tokens": 300,
-    "historial": 20,
+    "historial": 40,
     "contexto": 8192,
     "pensar": "auto",
     "internet": true,
@@ -50,5 +50,11 @@
       "voz_id": "410ebbad1edd414eb237eb6c4e24ac06",
       "espera_max": 8
     }
+  },
+  "juego": {
+    "pistas": true,
+    "tiempo_votos": 15,
+    "modo_votos": "cada_mensaje",
+    "tope_votos": 5
   }
 }

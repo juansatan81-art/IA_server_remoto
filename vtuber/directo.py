@@ -26,6 +26,9 @@ log = logging.getLogger("vtuber")
 _POSITIVO = re.compile(r"te quiero|te amo|guap[ao]|lind[ao]|preciosa|crack|genial|incre[ií]ble|"
                        r"me encanta|bonit[ao]|jaja|xd|<3|❤|💕|😍|🥰", re.I)
 _NEGATIVO = re.compile(r"aburrid|fe[ao]|mal[ao]|odio|callate|cállate|basura|horrible", re.I)
+_DESPEDIDA = re.compile(r"\b(me voy|me tengo que ir|me despido|adi[oó]s|chao|chau|bye|hasta (luego|ma[nñ]ana|la pr[oó]xima)|"
+                        r"nos vemos|buenas noches|a dormir|me desconecto)\b", re.I)
+_RELLENO = {"que", "del", "las", "los", "una", "uno", "por", "para", "con"}
 
 
 def _normalizar(texto):
@@ -62,6 +65,17 @@ class Directo:
         self.ignorados = 0
         self.saludado = False
         self._tarea = None
+        # memoria del directo entero: un resumen que se reescribe cada ~15 min (el historial
+        # literal solo guarda los últimos mensajes)
+        self.cada_resumen = cfg.get("resumen_cada", 900)
+        self.resumen_vivo = ""
+        self.ultimo_resumen = 0.0
+        self.ultimo_recordatorio = 0.0
+        self.sin_respuesta = {}       # autor -> mensajes suyos seguidos sin respuesta
+        # algo que Lara dijo no conocer: si en ese tiempo nadie lo explica, lo busca ella
+        self.espera_explicacion = cfg.get("espera_explicacion", 50)
+        self.por_explicar = None      # {"tema", "t"}
+        self.explicados = set()       # palabras de lo que el chat ya le explicó en este directo
 
     # ------------------------------------------------------------ control
     def arrancar_bucle(self):
@@ -75,6 +89,8 @@ class Directo:
         self.registro = []
         self.saludado = False
         self.animo = {"humor": 0.3, "energia": 0.8}
+        self.resumen_vivo, self.sin_respuesta, self.por_explicar, self.explicados = "", {}, None, set()
+        self.ultimo_resumen = self.ultimo_recordatorio = time.monotonic()
         self.proximo_espontaneo = time.monotonic() + 2   # que salude al empezar
         await self.vt.registrar("sistema", "Modo directo activado" + (f". Plan: {self.plan}" if self.plan else ""))
 
@@ -121,11 +137,24 @@ class Directo:
         if tipo != "mensaje":
             self.eventos.append({"autor": autor, "texto": texto, "tipo": tipo, **extra})
             return True
+        if self.vt.juego.votar(autor, texto):   # «5» durante una partida es un voto, no charla
+            return True
         if not texto or filtros.es_spam(texto):
             return False
         self.cola.append({"autor": autor, "texto": texto, "t": time.monotonic(),
                           "clave": _normalizar(texto), **extra})
+        self.sin_respuesta[autor] = self.sin_respuesta.get(autor, 0) + 1
         return True
+
+    def _palabras_tema(self):
+        if not self.por_explicar:
+            return set()
+        return {w for w in _normalizar(self.por_explicar["tema"]).split() if len(w) >= 3 and w not in _RELLENO}
+
+    def _explica(self, m):
+        """¿Este mensaje habla de lo que Lara dijo no conocer?"""
+        palabras = self._palabras_tema()
+        return bool(palabras) and bool(palabras & set(m["clave"].split()))
 
     def _elegir(self):
         """El mensaje más interesante de la cola (y quita los que ya no valen)."""
@@ -152,6 +181,12 @@ class Directo:
             if m["autor"] not in self.vt.memoria.espectadores:
                 p += 2                                    # alguien nuevo
             p -= 2.5 * self.negativos.get(m["autor"], 0)  # el que solo viene a molestar, al final
+            if self.sin_respuesta.get(m["autor"], 0) >= 2:
+                p += 3                                    # lleva varios mensajes sin respuesta
+            if self._explica(m):
+                p += 4                                    # le están explicando lo que no conocía
+            if _DESPEDIDA.search(m["texto"]):
+                p += 2                                    # que nadie se vaya sin despedida
             hace = ahora - self.respondidos.get(m["autor"], -1e9)
             if hace < 300:
                 p -= 4 * (1 - hace / 300)                 # ya le respondió hace poco
@@ -205,7 +240,11 @@ class Directo:
             partes.append(f"Estás en directo desde hace {minutos} minutos.")
         if self.plan:
             partes.append(f"Plan del directo de hoy: {self.plan}.")
+        if self.resumen_vivo:
+            partes.append(f"Lo que va de directo: {self.resumen_vivo}")
         partes.append(self._texto_animo())
+        if self.vt.juego.activo:
+            partes.append(self.vt.juego.nota())
         if self._vista():
             partes.append("La imagen que ves es tu pantalla del directo ahora mismo.")
         else:
@@ -226,7 +265,12 @@ class Directo:
             if time.monotonic() - self.vt.fin_habla < self.pausa:
                 continue
             try:
-                if self.eventos:
+                ahora = time.monotonic()
+                if self.por_explicar and ahora - self.por_explicar["t"] > self.espera_explicacion:
+                    await self._buscar_desconocido()
+                elif ahora - self.ultimo_resumen > self.cada_resumen and len(self.registro) >= 6:
+                    await self._actualizar_resumen()
+                elif self.eventos:
                     await self._atender_evento(self.eventos.popleft())
                 elif self.cola:
                     await self._atender_chat()
@@ -252,7 +296,22 @@ class Directo:
             self._cambiar_animo(humor=-0.03)
             await self.vt.registrar("filtro", f"Ignorado ({motivo or 'no apto'}) — {m['autor']}: {m['texto']}")
             return
+        nuevo_hoy = m["autor"] not in self.respondidos
         extra = [self.vt.memoria.sobre(m["autor"]), self.vt.glosario.nota(m["texto"])]
+        self.sin_respuesta.pop(m["autor"], None)
+        if _DESPEDIDA.search(m["texto"]):
+            extra.append(f"Parece que {m['autor']} se despide del directo: si de verdad se va, despídelo "
+                         f"por su nombre con un deseo concreto según lo que haya contado.")
+        if self._explica(m):
+            tema = self.por_explicar["tema"]
+            extra.append(f"{m['autor']} te está explicando qué es «{tema}», que antes no conocías: "
+                         f"dale las gracias y repítelo con tus palabras («ah, o sea que…»).")
+            self.vt._por_aprender.append((tema, f"Explicación de un espectador del chat: {m['texto']}"))
+            self.explicados |= self._palabras_tema()
+            self.por_explicar = None
+        elif nuevo_hoy and self.inicio and time.monotonic() - self.inicio > 600 and (self.resumen_vivo or self.plan):
+            extra.append(f"{m['autor']} acaba de llegar al directo: si viene a cuento, cuéntale en una "
+                         f"frase de qué va.")
         if m["varios"] > 1:
             extra.append(f"{m['varios']} personas han escrito esto mismo: puedes responder a todos a la vez.")
         if m.get("seguidos", 1) > 1:
@@ -271,11 +330,53 @@ class Directo:
         imagenes = self._vista() if self.ver_en_respuestas else []
         respuesta = await self.vt.responder_y_hablar(m["texto"], m["autor"], imagenes,
                                                      self._nota(" ".join(e for e in extra if e)))
+        self._recoger_desconocido()
         if respuesta:
             self.cambiar_tema = False
             self._cambiar_animo(energia=-0.004)
             self._programar_espontaneo()
             asyncio.create_task(self._apuntar_espectador(m["autor"], m["texto"]))
+
+    def _recoger_desconocido(self):
+        """Si al responder dijo no conocer algo, queda a la espera de que el chat lo explique."""
+        tema, self.vt.cerebro.no_lo_conozco = self.vt.cerebro.no_lo_conozco, ""
+        # lo que el chat ya le explicó en este directo no vuelve a quedar pendiente (al responder
+        # a la explicación, el modelo todavía lo marca como desconocido)
+        if tema and self.activo and not ({w for w in _normalizar(tema).split() if len(w) >= 3} & self.explicados):
+            self.por_explicar = {"tema": tema, "t": time.monotonic()}
+
+    async def _buscar_desconocido(self):
+        """Nadie le ha explicado lo que no conocía: lo busca ella (y el glosario lo aprende)."""
+        tema, self.por_explicar = self.por_explicar["tema"], None
+        await self.vt.responder_y_hablar(
+            f"(Nota para ti: hace un rato dijiste que no conocías «{tema}» y nadie del chat te lo ha "
+            f"explicado. Búscalo ahora en internet y cuéntalo en 1 o 2 frases, como «bueno, como "
+            f"nadie me lo explica, lo he buscado…».)", None, self._vista(), self._nota(), quien="sistema")
+        self._programar_espontaneo()
+
+    async def _actualizar_resumen(self):
+        """Cada ~15 min: resumen corto de lo que va de directo, que Lara tiene siempre delante."""
+        self.ultimo_resumen = time.monotonic()
+        lineas = "\n".join(self.registro[-80:])
+        anterior = f"Resumen que ya tenías de antes:\n{self.resumen_vivo}\n\n" if self.resumen_vivo else ""
+        try:
+            async with self.vt.turno:
+                datos = await self.vt.cerebro.json(
+                    [{"role": "system", "content": "Resumes directos de una VTuber, en español."},
+                     {"role": "user", "content":
+                      f"{anterior}Lo último que ha pasado en el directo de {self.vt.nombre}:\n{lineas}\n\n"
+                      f"Escribe el resumen de TODO lo que va de directo (lo de antes y lo nuevo) en 2 o 3 "
+                      f"frases cortas, en segunda persona («has hablado de…»): temas, quién contó qué "
+                      f"(con su nombre) y lo que quedó pendiente."}],
+                    {"type": "object", "properties": {"resumen": {"type": "string"}}, "required": ["resumen"]},
+                    max_tokens=220)
+            resumen = str(datos.get("resumen", "")).strip()
+        except Exception as err:
+            await self.vt.registrar("error", f"No se pudo resumir lo que va de directo: {err}")
+            return
+        if resumen:
+            self.resumen_vivo = resumen
+            await self.vt.registrar("sistema", f"Lo que va de directo: {resumen}")
 
     async def _apuntar_espectador(self, autor, texto):
         try:
@@ -319,6 +420,10 @@ class Directo:
                           "internet que conoces: " + "; ".join(f"{t['termino']} ({t['significado']})" for t in terminos))
         if not self.saludado:
             extra += " Acabas de empezar el directo: saluda a todo el mundo y cuenta qué vais a hacer hoy."
+        elif time.monotonic() - self.ultimo_recordatorio > 18 * 60 and (self.resumen_vivo or self.plan):
+            extra += (" Hace rato que no recuerdas de qué va el directo: si encaja, dilo en una frase "
+                      "para quien acabe de llegar («para quien llega: hoy estamos…»).")
+            self.ultimo_recordatorio = time.monotonic()
         dice = await self.vt.hablar_sola(self._nota(), self._vista(), extra)
         self.cambiar_tema = False
         if dice:

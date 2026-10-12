@@ -44,6 +44,15 @@
   .linea { padding: 6px 10px; border-radius: 10px; background: var(--fondo); white-space: pre-wrap; }
   .linea b { font-size: 12px; color: var(--suave); display: block; }
   .linea.error { color: var(--error); }
+  .valorar { display: flex; gap: 4px; margin-top: 4px; }
+  .valorar button { padding: 1px 8px; font-size: 13px; opacity: .45; }
+  .valorar button:hover, .valorar button.elegido { opacity: 1; }
+  .valorar button.elegido { border-color: var(--menta); }
+  #tableroPanel { display: grid; grid-template-columns: repeat(3, 72px); gap: 6px; margin-top: 12px; }
+  #tableroPanel button { height: 72px; font-size: 30px; font-weight: 700; padding: 0; }
+  #tableroPanel button.O { color: var(--menta); } #tableroPanel button small { font-size: 12px; color: var(--suave); font-weight: 400; }
+  #marcadorJuego { float: right; text-transform: none; letter-spacing: 0; font-weight: 400; }
+  #cuentaValoradas { float: right; text-transform: none; letter-spacing: 0; font-weight: 400; }
   form { display: flex; gap: 8px; margin-top: 8px; }
   input[type=text] { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); font: inherit; }
   button { padding: 9px 14px; border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); font: inherit; cursor: pointer; }
@@ -97,6 +106,7 @@
 
 <nav role="tablist">
   <button role="tab" data-pestana="directo" aria-selected="true">En directo</button>
+  <button role="tab" data-pestana="juegos" aria-selected="false">Juegos</button>
   <button role="tab" data-pestana="probar" aria-selected="false">Probar</button>
   <button role="tab" data-pestana="ajustes" aria-selected="false">Ajustes</button>
 </nav>
@@ -115,7 +125,7 @@
         <div id="estadoDirecto">Apagado. Con el directo encendido, Lara elige a quién responder del chat y habla sola cuando el chat está tranquilo.</div>
       </section>
       <section>
-        <h2>Hablar con Lara</h2>
+        <h2>Hablar con Lara <span id="cuentaValoradas" title="Frases valoradas: se guardan para el entrenamiento"></span></h2>
         <div id="registro"></div>
         <form id="formChat">
           <input id="chat" type="text" placeholder="Escríbele algo a Lara…" autocomplete="off">
@@ -133,6 +143,24 @@
     </div>
 
     <!-- ======================= PROBAR ======================= -->
+    <div class="pestana" id="pestana-juegos" hidden>
+      <section>
+        <h2>Tres en raya <span id="marcadorJuego"></span></h2>
+        <div class="fila">
+          <select id="rivalJuego"><option value="panel">Contra mí (aquí)</option><option value="chat">Contra el chat (votan 1-9)</option></select>
+          <select id="empiezaJuego"><option value="rival">Empieza el rival</option><option value="lara">Empieza Lara</option></select>
+          <button class="principal" id="nuevoJuego">Nueva partida</button>
+          <button id="terminarJuego">Terminar</button>
+        </div>
+        <div id="tableroPanel" aria-label="Tablero"></div>
+        <p id="estadoJuego" class="nota">Sin partida.</p>
+        <p class="nota">Para OBS: fuente de navegador con <code id="urlJuego"></code> (fondo transparente, 600×600).
+          Contra el chat, cada mensaje que sea solo un número del 1 al 9 cuenta como voto y no pasa a la charla.
+          Cada mensaje es un voto (como mucho 5 por persona y votación; se cambia en config.json → juego);
+          mientras mueve Lara no se vota. Se puede probar con «Simular chat» en la pestaña Probar.</p>
+      </section>
+    </div>
+
     <div class="pestana" id="pestana-probar" hidden>
       <section>
         <h2>Que diga una frase exacta</h2>
