@@ -66,7 +66,8 @@ class TresEnRaya:
         self.ultima_votacion = None   # {"casilla", "votos": {casilla: n}, "personas"}: se ve hasta la siguiente
         self._amenazas_lara = []      # casillas con las que Lara ganaba tras su última jugada
         self.presentando = False      # Lara está explicando cómo se vota: aún no corre el reloj
-        self._tarea = None
+        self._tareas = set()          # todo lo que el juego tiene en marcha (Terminar lo para todo)
+        self._hablando = 0            # Lara está moviendo, explicando o reaccionando
 
     # ------------------------------------------------------------ estado
     def estado(self):
@@ -86,7 +87,7 @@ class TresEnRaya:
         if not self.activo:
             return ""
         return (f"Ahora mismo SÍ estás jugando una partida de tres en raya contra {self._contra()}; "
-                f"tú eres la O. Tablero:\n{dibujar(self.tablero)}")
+                f"tú juegas con los círculos (O) y tu rival con las equis (X). Tablero:\n{dibujar(self.tablero)}")
 
     def _contra(self):
         # Lara NO sabe quién juega desde el panel: es «tu rival», sin nombre
@@ -108,14 +109,26 @@ class TresEnRaya:
             self.presentando = self.rival == "chat"   # ya desde ahora: ningún voto arranca el reloj antes
             self._lanzar(self._anunciar_inicio())
 
+    @property
+    def necesita_turno(self):
+        """El juego quiere hablar (le toca mover a Lara, explica cómo votar o reacciona al final):
+        el modo directo espera y no coge otro mensaje del chat mientras tanto."""
+        return self._hablando > 0 or self.presentando or (self.activo and self.turno == LARA)
+
     async def terminar(self):
+        """Para la partida del todo: tareas, votos y resultado (si no, el tablero se quedaba en
+        pantalla con «¡Gana…!» y no había forma de quitarlo)."""
         self.activo, self.turno, self.cierre_votos, self.presentando = False, "", 0.0, False
-        if self._tarea and not self._tarea.done():
-            self._tarea.cancel()
+        self.resultado, self.votos, self.por_autor, self.ultima_votacion = "", {}, {}, None
+        for tarea in list(self._tareas):
+            if tarea is not asyncio.current_task():
+                tarea.cancel()
         await self._avisar()
 
     def _lanzar(self, corrutina):
-        self._tarea = asyncio.create_task(self._con_errores(corrutina))
+        tarea = asyncio.create_task(self._con_errores(corrutina))
+        self._tareas.add(tarea)
+        tarea.add_done_callback(self._tareas.discard)
 
     async def _con_errores(self, corrutina):
         try:
@@ -151,8 +164,8 @@ class TresEnRaya:
         await self._avisar()
         quien = "el chat" if self.rival == "chat" else "tu rival"
         # la última jugada se le dice tal cual: si no, se la inventa al comentar el final
-        ultima = (f"La última jugada fue tu O en la casilla {casilla}." if ficha == LARA else
-                  f"La última jugada fue la X de {quien} en la casilla {casilla}.")
+        ultima = (f"La última jugada fue tu círculo en la casilla {casilla}." if ficha == LARA else
+                  f"La última jugada fue la equis de {quien} en la casilla {casilla}.")
         texto = {LARA: "Has GANADO tú la partida.", RIVAL: f"Ha ganado {quien}: has perdido la partida.",
                  "empate": "La partida ha acabado en empate."}[r] + " " + ultima
         siente = {LARA: "Te hace ilusión: feliz o un pelín presumida, sin burlarte de nadie.",
@@ -186,6 +199,13 @@ class TresEnRaya:
 
     async def _hablar(self, nota):
         """Lara dice algo sobre la partida (sin que salga en el registro como mensaje del chat)."""
+        self._hablando += 1
+        try:
+            await self._hablar_ya(nota)
+        finally:
+            self._hablando -= 1
+
+    async def _hablar_ya(self, nota):
         async with self.vt.turno:
             generacion = self.vt.generacion
             c = self.vt.cerebro
@@ -196,17 +216,34 @@ class TresEnRaya:
                 c._apuntar_turno(mensajes, dice)
                 c._recordar(nota, dice)
                 await self.vt._revisar_y_decir(dice, generacion, "juego")
+                if self.vt.directo.activo:
+                    self.vt.directo.saludado = True   # si saludó al presentar el juego, ya no repite «hola a todos»
 
     # ------------------------------------------------------------ Lara juega
     async def _mueve_lara(self, ultima=None, inicio=False):
+        self._hablando += 1
+        try:
+            await self._mueve_lara_ya(ultima, inicio)
+        finally:
+            self._hablando -= 1
+            # si la jugada no llegó a hacerse (un error), la partida no puede quedarse esperándola:
+            # bloquearía también el modo directo
+            if self.activo and self.turno == LARA:
+                self.activo, self.turno = False, ""
+                await self._avisar()
+                await self.vt.registrar("error", "Tres en raya: Lara no pudo mover; partida parada (empieza otra)")
+
+    async def _mueve_lara_ya(self, ultima=None, inicio=False):
         libres = [i + 1 for i in range(9) if not self.tablero[i]]
-        partes = [f"(Nota para ti: estás jugando al tres en raya contra {self._contra()}; tú eres la O "
-                  f"y tu rival la X. No sabes cómo se llama tu rival: no le pongas nombre.",
+        partes = [f"(Nota para ti: estás jugando al tres en raya contra {self._contra()}; tú juegas con "
+                  f"los círculos (O) y tu rival con las equis (X). Al hablar di siempre «círculo» y "
+                  f"«equis», NUNCA «O» ni «X» sueltas (la voz las lee mal). No sabes cómo se llama tu "
+                  f"rival: no le pongas nombre.",
                   f"Tablero (los números son casillas libres):\n{dibujar(self.tablero)}",
                   f"Casillas libres: {', '.join(map(str, libres))}."]
         if ultima:
             quien = "El chat ha votado y ha puesto" if self.rival == "chat" else "Tu rival acaba de poner"
-            partes.append(f"{quien} su X en la casilla {ultima}.")
+            partes.append(f"{quien} su equis en la casilla {ultima}.")
         if inicio:
             partes.append("Empiezas tú: es la primera jugada.")
         ganan, bloquean = jugadas_que_ganan(self.tablero, LARA), jugadas_que_ganan(self.tablero, RIVAL)

@@ -292,6 +292,8 @@ class Directo:
             # sin avatar abierto (ni panel ni OBS) no hay por dónde hablar: se espera
             if not self.activo or self.vt.ocupada() or not self.vt.avatares:
                 continue
+            if self.vt.juego.necesita_turno:   # la jugada de Lara va antes que el siguiente mensaje
+                continue
             if time.monotonic() - self.vt.fin_habla < self.pausa:
                 continue
             try:
